@@ -40,13 +40,13 @@ I guess if you do a system upgrade which puts the kernel image somewhere after t
 
     python3 spi_flash_programmer_client.py -s 4096 -f wr703n.orig.bin verify
 
-3. Write the ART partition to the final 64k of the chip.
+3. Write the ART partition to the final 64k of the chip (the magic numbers are 16M-64K and 4M-64K respectively).
 
-    python3 spi_flash_programmer_client.py -f wr703n.orig.bin --flash-offset 16711680 --file-offset 16711680 write
+    python3 spi_flash_programmer_client.py -f wr703n.orig.bin --flash-offset 16711680 --file-offset 4128768 write
 
 4. Verify the ART partition.
 
-    python3 spi_flash_programmer_client.py -f wr703n.orig.bin --flash-offset 16711680 --file-offset 16711680 verify
+    python3 spi_flash_programmer_client.py -f wr703n.orig.bin --flash-offset 16711680 --file-offset 4128768 verify
 
 5. Solder the new chip in.
 
