@@ -7,6 +7,24 @@ It requires [pySerial](http://pyserial.sourceforge.net).
 
 To use it, write the Arduino program, connect your chip, and run the Python client.
 
+Connecting a chip
+-----------------
+Connect the chip as follows, assuming you have an 8-pin SSOP Flash chip:
+
+<table>
+<tr><td>Chip pin</td><td>Arduino pin</td> </tr>
+<tr><td>1 /SS</td><td>10</td></tr>
+<tr><td>2 MISO</td><td>12</td></tr>
+<tr><td>3 /WP</td><td>+3.3V</td></tr>
+<tr><td>4 GND</td><td>GND</td></tr>
+<tr><td>5 MOSI</td><td>11</td></tr>
+<tr><td>6 SCK</td><td>13</td></tr>
+<tr><td>7 /HOLD</td><td>+3.3V</td></tr>
+<tr><td>8 VDD</td><td>+3.3V</td></tr>
+</table>
+
+You will need an Arduino running at 3.3V logic.
+
 Reading
 -------
 
@@ -21,6 +39,12 @@ Verifying
 ---------
 
     python3 spi_flash_programmer_client.py -d /dev/cu.usbserial --flash-offset 0 -s 4096 -f dump.bin verify
+
+Troubleshooting
+---------------
+
+* Try reducing the serial speed from 115200 to 57600. You'll have to edit the value in both the .ino and the .py.
+* Play with the SPCR setting in the .ino according to the datasheet.
 
 Flashing a 16MB wr703n Flash chip
 =================================
