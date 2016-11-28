@@ -54,11 +54,10 @@ void setup()
   pinMode(SLAVESELECT,OUTPUT);
     
   digitalWrite(SLAVESELECT,HIGH); //disable device 
-  // SPCR = 01010000
   //interrupt disabled,spi enabled,msb 1st,master,clk low when idle,
-  //sample on leading edge of clk,system clock/4 rate (fastest)
-  //SPCR = (1<<SPE)|(1<<MSTR);
-  SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPI2X);
+  //sample on leading edge of clk,system clock/2 rate (fastest)
+  SPCR = (1<<SPE)|(1<<MSTR);
+  SPSR = (1<<SPI2X);
   
   byte clr;
   clr=SPSR;
