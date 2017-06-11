@@ -31,8 +31,18 @@ class SerialChatChat:
 
 		return int(crc, 16)
 
+	def _printBuffer(self):
+		crc = b''
+		self.sock.flushInput()
+		self.sock.write(b'd')
+		while not crc.endswith(b'\r\n'):
+			crc += self.sock.read(1)
+
+		print ("BUFFER", crc)
+		
 	def _readPageOnce(self, page):
 		# Reads page, returns CRC
+		
 		cmd = 'r%02x%02x' % ((page & 0xff00) >> 8, (page & 0xff))
 		self.sock.write(cmd.encode('iso-8859-1'))
 		self.sock.flush()
@@ -85,13 +95,17 @@ class SerialChatChat:
 
 		# Write it, read it back, fail if we can't read what we wrote.
 		cmd = 'w%02x%02x' % ((page & 0xff00) >> 8, (page & 0xff))
+		
+		#self._printBuffer()
+		
 		self.sock.write(cmd.encode('iso-8859-1'))
 		self.sock.flush()
 		self.waitReady()
 
 		writtenCRC = self._readPageMultiple(page)
+		#self._printBuffer()
 
-		#print("written CRC", writtenCRC, "expected CRC", expectedCRC, page, data)
+		#print("written CRC", hex(writtenCRC), "expected CRC", hex(expectedCRC), page, data)
 		return writtenCRC == expectedCRC
 
 	def waitReady(self, seconds_to_wait=5):
@@ -153,10 +167,16 @@ class SerialChatChat:
 		expectedCRCs = [binascii.crc32(page) for page in pageData]
 		actualCRCs   = [self._readPageMultiple(pageOffset + idx) for idx in range(SECTOR_SIZE // 256)]
 
+		#print ("CRCS:", [hex(i) for i in expectedCRCs])
+		#print ("CRCS2:", [hex(i) for i in actualCRCs])
+		
+		
 		if expectedCRCs != actualCRCs:
+			print("APAGANDO")
 			self.eraseSector(byteOffset // SECTOR_SIZE)
 
 		for idx, page in enumerate(pageData):
+			#print("VAI GRAVAR", pageOffset + idx)
 			if not self.writePage(pageOffset + idx, page):
 				return False
 
@@ -202,7 +222,7 @@ class SerialChatChat:
 def main():
 	parser = argparse.ArgumentParser(description="Interface with an Arduino-based SPI flash programmer")
 	parser.add_argument('-f', dest='filename')
-	parser.add_argument('-d', dest='device', default='/dev/tty.usbserial-A700ekGi')
+	parser.add_argument('-d', dest='device', default='COM28')
 	parser.add_argument('-s', dest='size', default='4096', help="size in KB")
 	parser.add_argument('--flash-offset', dest='flash_offset', default='0', help='offset for flash read/write in bytes')
 	parser.add_argument('--file-offset', dest='file_offset', default='0', help='offset for file read/write in bytes')
@@ -221,4 +241,3 @@ def main():
 
 if __name__ == '__main__':
 	main()
-

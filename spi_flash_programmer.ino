@@ -1,3 +1,4 @@
+#include <SPI.h>
 #include <avr/pgmspace.h>
 
 #define DATAOUT 11//MOSI
@@ -15,10 +16,16 @@
 #define SECTOR_ERASE 0x20
 #define CHIP_ERASE 0xC7
 
+SPISettings settingsA(100000, MSBFIRST, SPI_MODE0);
+
+void erase_all();
+void read_page(byte adr1, byte adr2);
+void write_page(byte adr1, byte adr2);
+
 byte buffer [256];
 
 // Via http://excamera.com/sphinx/article-crc.html
-static const PROGMEM prog_uint32_t crc_table[16] = {
+static const PROGMEM uint32_t crc_table[16] = {
     0x00000000, 0x1db71064, 0x3b6e20c8, 0x26d930ac,
     0x76dc4190, 0x6b6b51f4, 0x4db26158, 0x5005713c,
     0xedb88320, 0xf00f9344, 0xd6d6a3e8, 0xcb61b38c,
@@ -58,11 +65,12 @@ void setup()
   //interrupt disabled,spi enabled,msb 1st,master,clk low when idle,
   //sample on leading edge of clk,system clock/4 rate (fastest)
   //SPCR = (1<<SPE)|(1<<MSTR);
-  SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPI2X);
+  //SPCR = (1<<SPE)|(1<<MSTR)|(1<<SPI2X);
+  SPI.begin();
   
-  byte clr;
-  clr=SPSR;
-  clr=SPDR;
+  //byte clr;
+  //clr=SPSR;
+  //clr=SPDR;
   
   delay(10);
  
@@ -180,11 +188,16 @@ byte read_hex()
 
 byte spi_transfer(volatile char data)
 {
-  SPDR = data;                    // Start the transmission
+  char ret;
+  //SPI.beginTransaction(settingsA);
+  ret = SPI.transfer(data);
+  //SPI.endTransaction();
+  return ret;
+  /*SPDR = data;                    // Start the transmission
   while (!(SPSR & (1<<SPIF)))     // Wait for the end of the transmission
   {
   };
-  return SPDR;                    // return the received byte
+  return SPDR;                    // return the received byte*/
 }
 
 void
@@ -216,8 +229,7 @@ void wait_for_write()
   }  
 }
 
-void
-write_page(byte adr1, byte adr2)
+void write_page(byte adr1, byte adr2)
 {
   int counter;
   
@@ -242,8 +254,7 @@ write_page(byte adr1, byte adr2)
   wait_for_write();
 }
 
-void
-erase_all()
+void erase_all()
 {
   int counter;
   
@@ -260,8 +271,7 @@ erase_all()
   wait_for_write();
 }
 
-void
-erase_sector(byte addr1, byte addr2)
+void erase_sector(byte addr1, byte addr2)
 {
   digitalWrite(SLAVESELECT,LOW);
   spi_transfer(WREN);
@@ -274,5 +284,6 @@ erase_sector(byte addr1, byte addr2)
   spi_transfer(addr2);
   spi_transfer(0);
   digitalWrite(SLAVESELECT,HIGH);
-}
 
+  wait_for_write();
+}
