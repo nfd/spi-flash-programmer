@@ -4,7 +4,7 @@
 
 #define DATAOUT 11 // MOSI
 #define DATAIN  12 // MISO
-#define SPICLOCK  13 //SCK
+#define SPICLOCK  13 // SCK
 #define SLAVESELECT 10 // SS
 
 // opcodes
@@ -27,6 +27,8 @@ void erase_sector(uint8_t addr1, uint8_t addr2);
 void wait_for_write(void);
 
 uint32_t crc_buffer(void);
+uint8_t read_hex(void);
+uint8_t read_nibble(void);
 
 uint8_t buffer [256];
 
@@ -34,6 +36,16 @@ SPISettings settingsA(100000, MSBFIRST, SPI_MODE0);
 
 void setup()
 {
+  uint16_t i;
+
+  for (i = 0; i < 256; i += 4)
+  { // Initialize buffer with 0xDEADBEEF
+    buffer[i + 0] = 0xDE;
+    buffer[i + 1] = 0xAD;
+    buffer[i + 2] = 0xBE;
+    buffer[i + 3] = 0xEF;
+  }
+
   Serial.begin(115200);
 
   pinMode(DATAOUT, OUTPUT);
@@ -52,9 +64,6 @@ void setup()
   SPI.begin();
 
   delay(10);
-
-  buffer[0] = 0xca;
-  buffer[1] = 0xfe;
 }
 
 void loop()
@@ -110,13 +119,13 @@ void loop()
   case 'h':
     Serial.println();
     Serial.println("SPI Flash programmer");
-    Serial.println("  e    : erase chip");
-    Serial.println("  sXXX : erase 4k sector XXX (hex)");
-    Serial.println("  c    : print buffer CRC-32");
-    Serial.println("  rXXXX: read 256-uint8_t page XXXX (hex) to buffer");
-    Serial.println("  wXXXX: write buffer to 256-uint8_t page XXXX (hex)");
-    Serial.println("  d    : display the buffer (in hex)");
-    Serial.println("  l<b> : load the buffer with <b>, where b is 256 uint8_ts of data");
+    Serial.println("  e     : erase chip");
+    Serial.println("  sXXX  : erase 4k sector XXX (hex)");
+    Serial.println("  c     : print buffer CRC-32");
+    Serial.println("  rXXXX : read 256-uint8_t page XXXX (hex) to buffer");
+    Serial.println("  wXXXX : write buffer to 256-uint8_t page XXXX (hex)");
+    Serial.println("  d     : display the buffer (in hex)");
+    Serial.println("  l<b>  : load the buffer with <b>, where b is 256 uint8_ts of data");
     Serial.println();
     Serial.println("Ex: r3700 - read 256 uint8_ts from page 0x3700");
     Serial.println("Ex: lcafe[...]3737 - load the buffer with 256 uint8_ts, first uint8_t 0xca...");
@@ -144,7 +153,7 @@ void dump_buffer_crc(void)
   Serial.println();
 }
 
-void load_buffer()
+void load_buffer(void)
 {
   uint16_t counter;
 
@@ -153,7 +162,7 @@ void load_buffer()
   }
 }
 
-uint8_t read_nibble()
+uint8_t read_nibble(void)
 {
   uint8_t nibble;
   do {
@@ -168,7 +177,7 @@ uint8_t read_nibble()
   } 
 }
 
-uint8_t read_hex()
+uint8_t read_hex(void)
 {
   uint8_t val;
 
