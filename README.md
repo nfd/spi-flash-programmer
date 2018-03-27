@@ -1,15 +1,35 @@
+
 SPI Flash programmer
 ====================
 
-This is a very simple Arduino sketch and Python client to program SPI flash chips. It's probably not very nice or tolerant, but it does at least have error correction and fast verification (and needs both!)
+This is a very simple Arduino sketch and Python client to program SPI flash chips. It's probably not very nice or tolerant, but it does at least have error correction and fast verification.
 
-It requires [pySerial](http://pyserial.sourceforge.net).
+It requires [pySerial](https://github.com/pyserial/pyserial) and [clint](https://github.com/kennethreitz/clint). Both modules can be installed with:
 
-To use it, write the Arduino program, connect your chip, and run the Python client.
+```bash
+python3 -m pip install pyserial clint
+```
+
+Usage
+-----
+
+  - Program the Arduino with sketch
+  - Connect the SPI flash chip as described
+  - Run python client on PC to talk to programmer
 
 Connecting a chip
 -----------------
-Connect the chip as follows, assuming you have an 8-pin SSOP Flash chip:
+
+Connect the chip as follows, assuming you have an 3.3V 8-pin SSOP Flash chip.
+<b>You will need an Arduino running at 3.3V logic.</b> See [3.3V Conversion](https://learn.adafruit.com/arduino-tips-tricks-and-techniques/3-3v-conversion) to convert your Arduino to 3.3V.
+
+Or use one of the following devices running at 3.3V:
+
+  - [Arduino 101 / Genuino 101](https://store.arduino.cc/genuino-101)
+  - [Arduino Zero / Genuino Zero](https://store.arduino.cc/genuino-zero)
+  - [Arduino Due](https://store.arduino.cc/arduino-due)
+  - [Arduino M0](https://store.arduino.cc/arduino-m0)
+  - [Arduino M0 Pro](https://store.arduino.cc/arduino-m0-pro)
 
 <table>
 <tr><td>Chip pin</td><td>Arduino pin</td> </tr>
@@ -23,22 +43,57 @@ Connect the chip as follows, assuming you have an 8-pin SSOP Flash chip:
 <tr><td>8 VDD</td><td>+3.3V</td></tr>
 </table>
 
-You will need an Arduino running at 3.3V logic.
-
-Reading
+Commands
 -------
 
-    python3 spi_flash_programmer_client.py -d /dev/cu.usbserial --flash-offset 0 -s 4096 -f dump.bin read
+```bash
+# Listing serial ports
+> python3 spi_flash_programmer_client.py ports
+0: COM15
+1: /dev/ttyS1
+2: /dev/cu.usbserial
+Done
 
-Writing
--------
+# Reading flash
+> python3 spi_flash_programmer_client.py \
+>   -d COM1 -l 4096 -f dump.bin read
+....
 
-    python3 spi_flash_programmer_client.py -d /dev/cu.usbserial --flash-offset 0 -s 4096 -f dump.bin write
+# Writing flash
+> python3 spi_flash_programmer_client.py \
+>   -d /dev/ttyS1 -l 4096 -f dump.bin write
+....
 
-Verifying
----------
+# Verifying flash
+> python3 spi_flash_programmer_client.py \
+>   -d /dev/cu.usbserial -l 4096 -f dump.bin verify
+....
 
-    python3 spi_flash_programmer_client.py -d /dev/cu.usbserial --flash-offset 0 -s 4096 -f dump.bin verify
+# Help text
+> python3 spi_flash_programmer_client.py -h
+usage: spi_flash_programmer_client.py [-h] [-d DEVICE] [-f FILENAME]
+                                      [-l LENGTH] [--rate BAUD_RATE]
+                                      [--flash-offset FLASH_OFFSET]
+                                      [--file-offset FILE_OFFSET]
+                                      {ports,write,read,verify}
+
+Interface with an Arduino-based SPI flash programmer
+
+positional arguments:
+  {ports,write,read,verify}
+                        command to execute
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -d DEVICE             serial port to communicate with
+  -f FILENAME           file to read from / write to
+  -l LENGTH             length to read/write in bytes
+  --rate BAUD_RATE      baud-rate of serial connection
+  --flash-offset FLASH_OFFSET
+                        offset for flash read/write in bytes
+  --file-offset FILE_OFFSET
+                        offset for file read/write in bytes
+```
 
 Troubleshooting
 ---------------
