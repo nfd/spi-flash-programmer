@@ -101,6 +101,15 @@ Troubleshooting
 * Try reducing the serial speed from 115200 to 57600. You'll have to edit the value in both the .ino and the .py.
 * Play with the SPCR setting in the .ino according to the datasheet.
 
+License [CC0][http://creativecommons.org/publicdomain/zero/1.0/]
+----------------------------------------------------------------
+
+To the extent possible under law, the authors below have waived all copyright and related or neighboring rights to spi-flash-programmer.
+
+  - Nicholas FitzRoy-Dale, United Kingdom
+  - Tobias Faller, Germany
+
+
 Flashing a 16MB wr703n Flash chip
 =================================
 I used this to write a 16MB flash chip for the wr703n router running OpenWRT. Recent versions of OpenWRT detect the larger Flash and automatically use it, so you don't need to do any patching. U-Boot still thinks the chip is 4MB large, but Linux doesn't seem to care. So all you need to do is copy the image and write the ART (wireless firmware) partition to the right spot, which is right at the end of Flash.
