@@ -1,13 +1,15 @@
 #include <stdint.h>
+#include <stdio.h>
 
 #include <SPI.h>
 
+// SPI pins
 #define DATAOUT 11 // MOSI
 #define DATAIN  12 // MISO
 #define SPICLOCK  13 // SCK
 #define SLAVESELECT 10 // SS
 
-// opcodes
+// SPI opcodes
 #define WREN  6
 #define WRDI  4
 #define RDSR  5
@@ -17,18 +19,34 @@
 #define SECTOR_ERASE 0x20
 #define CHIP_ERASE 0xC7
 
-void erase_all(void);
-void read_page(uint8_t adr1, uint8_t adr2);
-void write_page(uint8_t adr1, uint8_t adr2);
+// Command
+#define COMMAND_HELLO '>'
+#define COMMAND_HELP '?'
+#define COMMAND_BUFFER_CRC 'h'
+#define COMMAND_BUFFER_LOAD 'l'
+#define COMMAND_BUFFER_STORE 's'
+#define COMMAND_FLASH_READ 'r'
+#define COMMAND_FLASH_WRITE 'w'
+#define COMMAND_FLASH_ERASE_SECTOR 'k'
+#define COMMAND_FLASH_ERASE_ALL 'n'
+#define COMMAND_ERROR '!'
+
 void dump_buffer(void);
 void dump_buffer_crc(void);
-void load_buffer(void);
-void erase_sector(uint8_t addr1, uint8_t addr2);
-void wait_for_write(void);
+void write_buffer(void);
+
+void erase_all(void);
+void erase_sector(uint32_t address);
+void read_page(uint32_t address);
+void write_page(uint32_t address);
 
 uint32_t crc_buffer(void);
-uint8_t read_hex(void);
-uint8_t read_nibble(void);
+void wait_for_write_enable(void);
+
+int8_t read_nibble(void);
+int32_t read_hex_u16(void);
+int8_t read_hex_u32(uint32_t *value);
+void write_hex_u16(uint16_t value);
 
 uint8_t buffer [256];
 
@@ -50,17 +68,11 @@ void setup()
 
   pinMode(DATAOUT, OUTPUT);
   pinMode(DATAIN, INPUT);
-  pinMode(SPICLOCK,OUTPUT);
-  pinMode(SLAVESELECT,OUTPUT);
+  pinMode(SPICLOCK, OUTPUT);
+  pinMode(SLAVESELECT, OUTPUT);
 
-  digitalWrite(SLAVESELECT, HIGH); // disable device
+  digitalWrite(SLAVESELECT, HIGH); // disable flash device
 
-  // SPCR = 01010000
-  // interrupt disabled, spi enabled, msb 1st, master,
-  // clk low when idle, sample on leading edge of clk,
-  // system clock/2 rate (fastest)
-  // SPCR = (1<<SPE) | (1<<MSTR);
-  // SPSR = (1<<SPI2X);
   SPI.begin();
 
   delay(10);
@@ -68,55 +80,70 @@ void setup()
 
 void loop()
 {
-  uint8_t addr1, addr2;
+  int32_t tmp;
+  uint32_t address;
 
   // Wait for command
-  while(Serial.available() == 0)
-  {
+  while(Serial.available() == 0) {
+    ; // Do nothing
   }
 
   int cmd = Serial.read();
   switch(cmd) {
-  case '>':
-    Serial.print('>');
+  case COMMAND_HELLO:
+    Serial.print(COMMAND_HELLO); // Echo OK
+    Serial.print("SPI Flash programmer v1.0\r\n");
+    Serial.print(COMMAND_HELLO); // Echo 2nd OK
     break;
 
-  case 'e':
+  case COMMAND_FLASH_ERASE_ALL:
     erase_all();
+    Serial.print(COMMAND_FLASH_ERASE_ALL); // Echo OK
     break;
 
-  case 'r':
-    addr1 = read_hex();
-    addr2 = read_hex();
-    read_page(addr1, addr2);
+  case COMMAND_FLASH_ERASE_SECTOR:
+    if (!read_hex_u32(&address)) {
+      Serial.print(COMMAND_ERROR); // Echo Error
+    }
+
+    erase_sector(address);
+    Serial.print(COMMAND_FLASH_ERASE_SECTOR); // Echo OK
     break;
 
-  case 'w':
-    addr1 = read_hex();
-    addr2 = read_hex();
-    write_page(addr1, addr2);
+  case COMMAND_FLASH_READ:
+    if (!read_hex_u32(&address)) {
+      Serial.print(COMMAND_ERROR); // Echo Error
+    }
+
+    read_page(address);
+    Serial.print(COMMAND_FLASH_READ); // Echo OK
     break;
 
-  case 'd':
+  case COMMAND_FLASH_WRITE:
+    if (!read_hex_u32(&address)) {
+      Serial.print(COMMAND_ERROR); // Echo Error
+    }
+
+    write_page(address);
+    Serial.print(COMMAND_FLASH_WRITE); // Echo OK
+    break;
+
+  case COMMAND_BUFFER_LOAD:
+    Serial.print(COMMAND_BUFFER_LOAD); // Echo OK
     dump_buffer();
     break;
 
-  case 'c':
+  case COMMAND_BUFFER_CRC:
+    Serial.print(COMMAND_BUFFER_CRC); // Echo OK
     dump_buffer_crc();
     break;
 
-  case 'l':
-    load_buffer();
+  case COMMAND_BUFFER_STORE:
+    Serial.print(COMMAND_BUFFER_STORE); // Echo OK
+    write_buffer();
     break;
 
-  case 's':
-    addr1 = read_hex();
-    addr2 = read_nibble() << 4;
-    erase_sector(addr1, addr2);
-    break;
-
-  case '?':
-  case 'h':
+  case COMMAND_HELP:
     Serial.println();
     Serial.println("SPI Flash programmer");
     Serial.println("  e     : erase chip");
@@ -162,53 +189,32 @@ void load_buffer(void)
   }
 }
 
-uint8_t read_nibble(void)
-{
-  uint8_t nibble;
-  do {
-    nibble = Serial.read();
-  } while(nibble == -1);
-
-  if(nibble >= 'A') {
-    // works for lowercase as well (but no range checking of course)
-    return 9 + (nibble & 0x0f);
-  } else {
-    return nibble & 0x0f;
-  } 
-}
-
-uint8_t read_hex(void)
-{
-  uint8_t val;
-
-  val = (read_nibble() & 0xf) << 4;
-  val |= read_nibble();
-
-  return val;
-}
-
 uint8_t spi_transfer(uint8_t data)
 {
   return SPI.transfer(data);
 }
 
-void read_page(uint8_t adr1, uint8_t adr2)
+void read_page(uint32_t address)
 {
   uint16_t counter;
 
-  //READ EEPROM
+  // Send read command
   digitalWrite(SLAVESELECT,LOW);
   spi_transfer(READ);
-  spi_transfer(adr1); // bits 23 to 16
-  spi_transfer(adr2); // bits 15 to 8
-  spi_transfer(0);    // bits 7 to 0
+  spi_transfer((address >> 8) & 0xFF); // bits 23 to 16
+  spi_transfer(address & 0xFF);        // bits 15 to 8
+  spi_transfer(0);                     // bits 7 to 0
+
+  // Transfer a dummy sector to read data
   for(counter = 0; counter < 256; counter++) {
     buffer[counter] = spi_transfer(0xff);
   }
-  digitalWrite(SLAVESELECT,HIGH); //release chip, signal end transfer
+
+  // Release chip, signal end transfer
+  digitalWrite(SLAVESELECT, HIGH);
 } 
 
-void wait_for_write(void)
+void wait_for_write_enable(void)
 {
   uint8_t statreg = 0x1;
 
@@ -236,29 +242,29 @@ void write_page(uint8_t adr1, uint8_t adr2)
   spi_transfer(adr2); // bits 15 to 8
   spi_transfer(0);    // bits 7 to 0
 
-  for (counter = 0; counter < 256; counter++)
-  {
+  for (counter = 0; counter < 256; counter++) {
     spi_transfer(buffer[counter]);
   }
-  digitalWrite(SLAVESELECT,HIGH);
-  delay(1);
 
-  wait_for_write();
+  digitalWrite(SLAVESELECT, HIGH);
+  delay(1); // Wait for 1 ms
+
+  wait_for_write_enable();
 }
 
 void erase_all()
 {
   digitalWrite(SLAVESELECT,LOW);
-  spi_transfer(WREN); //write enable
+  spi_transfer(WREN); // write enable
   digitalWrite(SLAVESELECT,HIGH);
-  delay(10);
+  delay(10); // Wait for 10 ms
 
   digitalWrite(SLAVESELECT,LOW);
   spi_transfer(CHIP_ERASE);
   digitalWrite(SLAVESELECT,HIGH);
-  delay(1);
+  delay(1); // Wait for 1 ms
 
-  wait_for_write();
+  wait_for_write_enable();
 }
 
 void erase_sector(uint8_t addr1, uint8_t addr2)
@@ -275,7 +281,87 @@ void erase_sector(uint8_t addr1, uint8_t addr2)
   spi_transfer(0);
   digitalWrite(SLAVESELECT,HIGH);
 
-  wait_for_write();
+  wait_for_write_enable();
+}
+
+int8_t read_nibble(void)
+{
+  int8_t c;
+
+  do {
+    c = Serial.read();
+  } while(c == -1);
+
+  if (c >= '0' && c <= '9') {
+    return (c - '0') + 0;
+  } else if (c >= 'a' && c <= 'f') {
+    return (c - 'a') + 10;
+  } else if (c >= 'A' && c <= 'F') {
+    return (c - 'A') + 10;
+  } else {
+    return -1;
+  }
+}
+
+int32_t read_hex_u16(void)
+{
+  int8_t i, tmp;
+  uint16_t value;
+
+  for (i = 0; i < 4; i++) {
+    tmp = read_nibble();
+    if (tmp == -1) {
+      return -1;
+    }
+
+    value <<= 4;
+    value |= ((uint8_t) tmp) & 0x0F;
+  }
+
+  return value;
+}
+
+int8_t read_hex_u32(uint32_t *value)
+{
+  uint32_t result;
+  int16_t tmp;
+
+  tmp = read_hex();
+  if (tmp == -1) {
+    return 0;
+  }
+
+  result = (uint16_t) tmp;
+  result <<= 16;
+
+  tmp = read_hex();
+  if (tmp == -1) {
+    return 0;
+  }
+
+  result |= (uint16_t) tmp;
+  (*value) = result;
+
+  return 1;
+}
+
+void write_nibble(uint8_t value)
+{
+  if (value < 10) {
+    Serial.write(value + '0' - 0);
+  } else {
+    Serial.write(value + 'A' - 10);
+  }
+}
+
+void write_hex_u16(uint16_t value)
+{
+    uint8_t i;
+
+    for (i = 0; i < 4; i++) {
+      write_nibble((uint8_t) ((value >> 12) & 0x0F));
+      value >>= 4;
+    }
 }
 
 // Via http://excamera.com/sphinx/article-crc.html
@@ -304,8 +390,7 @@ uint32_t crc_buffer(void)
   uint16_t i;
   uint32_t crc = ~0L;
 
-  for(i = 0; i < 256; i++)
-  {
+  for(i = 0; i < 256; i++) {
     crc = crc_update(crc, buffer[i]);
   }
 

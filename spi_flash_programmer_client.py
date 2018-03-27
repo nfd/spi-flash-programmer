@@ -10,6 +10,8 @@ import serial.tools.list_ports as list_ports
 
 from clint.textui import colored, puts, progress
 
+COMMAND_HELLO = '>'
+
 COMMAND_BUFFER_CRC = 'h'
 COMMAND_BUFFER_LOAD = 'l'
 COMMAND_BUFFER_STORE = 's'
@@ -20,9 +22,6 @@ COMMAND_FLASH_ERASE_SECTOR = 'k'
 
 DEFAULT_SECTOR_SIZE = 4096
 DEFAULT_PAGE_SIZE = 256
-
-#for chunk in progress.bar(request.iter_content(chunk_size=1024),
-#	expected_size=(total_length / 1024) + 1):
 
 def logMessage(text):
 	puts(colored.white(text))
@@ -71,7 +70,7 @@ class SerialProgrammer:
 		data = b''
 
 		_try = 0
-		while len(data) < text and _try < tries:
+		while _try < tries:
 			new_data = self.sock.read(max(length - len(data), 1))
 			if new_data == b'':
 				_try += 1
@@ -85,6 +84,34 @@ class SerialProgrammer:
 				return True
 
 		return False
+
+	def _getUntilMessage(self, text, tries = 3, max_length=100):
+		"""Wait for the expected message and return the data received"""
+		data = text.decode('iso-8859-1')
+		return self._getUntil(len(data), lambda _data: data == _data,
+				tries, max_length)
+
+	def _getUntil(self, length, check, tries = 3, max_length=1000):
+		"""Wait for the expected message and return the data received"""
+		data = b''
+		message = b''
+
+		_try = 0
+		while _try < tries:
+			new_data = self.sock.read(max(length - len(message), 1))
+			if new_data == b'':
+				_try += 1
+
+			max_length -= len(new_data)
+			if max_length < 0:
+				return None
+
+			message = (message + new_data)[-length:]
+			data += new_data
+			if check(message):
+				return data[:-len(message)]
+
+		return None
 
 	def _sendCommand(self, command):
 		self.sock.write(command.encode('iso-8859-1'))
@@ -163,7 +190,7 @@ class SerialProgrammer:
 				continue
 
 			try:
-				return binascii.a2b_hex(result)
+				return binascii.a2b_hex(page_data.decode('iso-8859-1'))
 			except TypeError:
 				continue
 
@@ -267,6 +294,31 @@ class SerialProgrammer:
 						break
 
 		return True
+
+	def _hello(self):
+		"""Send a hello message and expect a version string"""
+		# Write hello
+		self._sendCommand(COMMAND_HELLO)
+
+		# Wait for hello response start
+		if not self._waitForMessage(COMMAND_HELLO):
+			return None
+
+		message = self._readUnitl(COMMAND_HELLO)
+		if message is None:
+			return None
+
+		return message.decode('iso-8859-1')
+
+	def hello(self):
+		"""Send a hello message and print the retrieved version string"""
+		version = self._hello()
+		if version is None:
+			logError('Connected to unknown device')
+			return True
+		else:
+			logMessage('Connected to \'%s\'' % version)
+			return False
 
 	def writeFromFile(self, filename, flash_offset=0, file_offset=0,
 			length=DEFAULT_SECTOR_SIZE):
@@ -420,15 +472,18 @@ def main():
 		return
 
 	def write(args, prog):
-		return prog.writeFile(args.filename, args.flash_offset, \
+		return prog.hello() && \
+			prog.writeFile(args.filename, args.flash_offset, \
 				args.file_offset, args.legth * 1024)
 
 	def read(args, prog):
-		return prog.readToFile(args.filename, args.flash_offset, \
+		return prog.hello() && \
+			 prog.readToFile(args.filename, args.flash_offset, \
 				args.legth * 1024)
 
 	def verify(args, prog):
-		return prog.verify(args.filename, args.flash_offset, \
+		return prog.hello() && \
+			 prog.verify(args.filename, args.flash_offset, \
 				args.file_offset, args.legth * 1024)
 
 	commands = {
