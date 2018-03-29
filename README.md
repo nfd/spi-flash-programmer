@@ -2,9 +2,9 @@
 SPI Flash programmer
 ====================
 
-This is a very simple Arduino sketch and Python client to program SPI flash chips. It's probably not very nice or tolerant, but it does at least have error correction and fast verification.
+This is a very simple Arduino sketch and Python 3 client to program SPI flash chips. It's probably not very nice or tolerant, but it does at least have error correction and fast verification.
 
-It requires [pySerial](https://github.com/pyserial/pyserial) and [clint](https://github.com/kennethreitz/clint). Both modules can be installed with:
+The requirements are [pySerial](https://github.com/pyserial/pyserial) and [clint](https://github.com/kennethreitz/clint). Both modules can be installed with [pip](https://pip.pypa.io/en/stable/installing/):
 
 ```bash
 python3 -m pip install pyserial clint
