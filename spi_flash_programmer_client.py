@@ -542,7 +542,7 @@ def main():
 
 	def verify(args, prog):
 		return prog.hello() and \
-			 prog.verify(args.filename, args.flash_offset, \
+			 prog.verifyWithFile(args.filename, args.flash_offset, \
 				args.file_offset, args.length * 1024)
 
 	def erase(args, prog):
