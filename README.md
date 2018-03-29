@@ -106,6 +106,7 @@ License [CC0][http://creativecommons.org/publicdomain/zero/1.0/]
 
 To the extent possible under law, the authors below have waived all copyright and related or neighboring rights to spi-flash-programmer.
 
+  - Leonardo Goncalves
   - Nicholas FitzRoy-Dale, United Kingdom
   - Tobias Faller, Germany
 
