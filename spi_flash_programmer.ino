@@ -31,9 +31,11 @@
 #define COMMAND_FLASH_ERASE_ALL 'n'
 #define COMMAND_ERROR '!'
 
+#define VERSION "SPI Flash programmer v1.0"
+
 void dump_buffer(void);
 void dump_buffer_crc(void);
-void write_buffer(void);
+int8_t read_into_buffer(void);
 
 void erase_all(void);
 void erase_sector(uint32_t address);
@@ -44,8 +46,10 @@ uint32_t crc_buffer(void);
 void wait_for_write_enable(void);
 
 int8_t read_nibble(void);
+int16_t read_hex_u8(void);
 int32_t read_hex_u16(void);
 int8_t read_hex_u32(uint32_t *value);
+void write_hex_u8(uint8_t value);
 void write_hex_u16(uint16_t value);
 
 uint8_t buffer [256];
@@ -80,7 +84,6 @@ void setup()
 
 void loop()
 {
-  int32_t tmp;
   uint32_t address;
 
   // Wait for command
@@ -92,7 +95,7 @@ void loop()
   switch(cmd) {
   case COMMAND_HELLO:
     Serial.print(COMMAND_HELLO); // Echo OK
-    Serial.print("SPI Flash programmer v1.0\r\n");
+    Serial.println(VERSION);
     Serial.print(COMMAND_HELLO); // Echo 2nd OK
     break;
 
@@ -104,6 +107,7 @@ void loop()
   case COMMAND_FLASH_ERASE_SECTOR:
     if (!read_hex_u32(&address)) {
       Serial.print(COMMAND_ERROR); // Echo Error
+      break;
     }
 
     erase_sector(address);
@@ -113,6 +117,7 @@ void loop()
   case COMMAND_FLASH_READ:
     if (!read_hex_u32(&address)) {
       Serial.print(COMMAND_ERROR); // Echo Error
+      break;
     }
 
     read_page(address);
@@ -122,6 +127,7 @@ void loop()
   case COMMAND_FLASH_WRITE:
     if (!read_hex_u32(&address)) {
       Serial.print(COMMAND_ERROR); // Echo Error
+      break;
     }
 
     write_page(address);
@@ -131,21 +137,26 @@ void loop()
   case COMMAND_BUFFER_LOAD:
     Serial.print(COMMAND_BUFFER_LOAD); // Echo OK
     dump_buffer();
+    Serial.println();
     break;
 
   case COMMAND_BUFFER_CRC:
     Serial.print(COMMAND_BUFFER_CRC); // Echo OK
     dump_buffer_crc();
+    Serial.println();
     break;
 
   case COMMAND_BUFFER_STORE:
+    if (!read_into_buffer()) {
+      Serial.print(COMMAND_ERROR); // Echo Error
+      break;
+    }
+
     Serial.print(COMMAND_BUFFER_STORE); // Echo OK
-    write_buffer();
     break;
 
   case COMMAND_HELP:
-    Serial.println();
-    Serial.println("SPI Flash programmer");
+    Serial.println(VERSION);
     Serial.println("  e     : erase chip");
     Serial.println("  sXXX  : erase 4k sector XXX (hex)");
     Serial.println("  c     : print buffer CRC-32");
@@ -167,26 +178,32 @@ void dump_buffer(void)
   uint16_t counter;
 
   for(counter = 0; counter < 256; counter++) {
-    Serial.print(buffer[counter] >> 4, HEX);
-    Serial.print(buffer[counter] & 0xF, HEX);
+    write_hex_u8(buffer[counter]);
   }
-
-  Serial.println();
 }
 
 void dump_buffer_crc(void)
 {
-  Serial.print(crc_buffer(), HEX);
-  Serial.println();
+  uint32_t crc = crc_buffer();
+  write_hex_u16((crc >> 16) & 0xFFFF);
+  write_hex_u16(crc & 0xFFFF);
 }
 
-void load_buffer(void)
+int8_t read_into_buffer(void)
 {
   uint16_t counter;
+  int16_t tmp;
 
   for(counter = 0; counter < 256; counter++) {
-    buffer[counter] = read_hex();
+    tmp = read_hex_u8();
+    if (tmp == -1) {
+      return 0;
+    }
+
+    buffer[counter] = (uint8_t) tmp;
   }
+
+  return 1;
 }
 
 uint8_t spi_transfer(uint8_t data)
@@ -200,7 +217,7 @@ void read_page(uint32_t address)
 
   // Send read command
   digitalWrite(SLAVESELECT,LOW);
-  spi_transfer(READ);
+  spi_transfer(READ);                  // read instruction
   spi_transfer((address >> 8) & 0xFF); // bits 23 to 16
   spi_transfer(address & 0xFF);        // bits 15 to 8
   spi_transfer(0);                     // bits 7 to 0
@@ -227,7 +244,7 @@ void wait_for_write_enable(void)
   }
 }
 
-void write_page(uint8_t adr1, uint8_t adr2)
+void write_page(uint32_t address)
 {
   uint16_t counter;
 
@@ -237,10 +254,10 @@ void write_page(uint8_t adr1, uint8_t adr2)
   delay(10);
 
   digitalWrite(SLAVESELECT,LOW);
-  spi_transfer(WRITE); // write instruction
-  spi_transfer(adr1); // bits 23 to 16
-  spi_transfer(adr2); // bits 15 to 8
-  spi_transfer(0);    // bits 7 to 0
+  spi_transfer(WRITE);                 // write instruction
+  spi_transfer((address >> 8) & 0xFF); // bits 23 to 16
+  spi_transfer(address & 0xFF);        // bits 15 to 8
+  spi_transfer(0);                     // bits 7 to 0
 
   for (counter = 0; counter < 256; counter++) {
     spi_transfer(buffer[counter]);
@@ -267,7 +284,7 @@ void erase_all()
   wait_for_write_enable();
 }
 
-void erase_sector(uint8_t addr1, uint8_t addr2)
+void erase_sector(uint32_t address)
 {
   digitalWrite(SLAVESELECT,LOW);
   spi_transfer(WREN);
@@ -275,10 +292,10 @@ void erase_sector(uint8_t addr1, uint8_t addr2)
   delay(10);
 
   digitalWrite(SLAVESELECT,LOW);
-  spi_transfer(SECTOR_ERASE);
-  spi_transfer(addr1);
-  spi_transfer(addr2);
-  spi_transfer(0);
+  spi_transfer(SECTOR_ERASE);          // sector erase instruction
+  spi_transfer((address >> 8) & 0xFF); // bits 23 to 16
+  spi_transfer(address & 0xFF);        // bits 15 to 8
+  spi_transfer(0);                     // bits 7 to 0
   digitalWrite(SLAVESELECT,HIGH);
 
   wait_for_write_enable();
@@ -286,7 +303,7 @@ void erase_sector(uint8_t addr1, uint8_t addr2)
 
 int8_t read_nibble(void)
 {
-  int8_t c;
+  int16_t c;
 
   do {
     c = Serial.read();
@@ -306,7 +323,7 @@ int8_t read_nibble(void)
 int32_t read_hex_u16(void)
 {
   int8_t i, tmp;
-  uint16_t value;
+  uint16_t value = 0;
 
   for (i = 0; i < 4; i++) {
     tmp = read_nibble();
@@ -321,25 +338,39 @@ int32_t read_hex_u16(void)
   return value;
 }
 
+int16_t read_hex_u8(void)
+{
+  int8_t i, tmp;
+  uint8_t value = 0;
+
+  for (i = 0; i < 2; i++) {
+    tmp = read_nibble();
+    if (tmp == -1) {
+      return -1;
+    }
+
+    value <<= 4;
+    value |= ((uint8_t) tmp) & 0x0F;
+  }
+
+  return value;
+}
+
 int8_t read_hex_u32(uint32_t *value)
 {
-  uint32_t result;
-  int16_t tmp;
+  int8_t i, tmp;
+  uint32_t result = 0;
 
-  tmp = read_hex();
-  if (tmp == -1) {
-    return 0;
+  for (i = 0; i < 8; i++) {
+    tmp = read_nibble();
+    if (tmp == -1) {
+      return -1;
+    }
+
+    result <<= 4;
+    result |= ((uint32_t) tmp) & 0x0F;
   }
 
-  result = (uint16_t) tmp;
-  result <<= 16;
-
-  tmp = read_hex();
-  if (tmp == -1) {
-    return 0;
-  }
-
-  result |= (uint16_t) tmp;
   (*value) = result;
 
   return 1;
@@ -354,13 +385,23 @@ void write_nibble(uint8_t value)
   }
 }
 
+void write_hex_u8(uint8_t value)
+{
+    uint8_t i;
+
+    for (i = 0; i < 2; i++) {
+      write_nibble((uint8_t) ((value >> 4) & 0x0F));
+      value <<= 4;
+    }
+}
+
 void write_hex_u16(uint16_t value)
 {
     uint8_t i;
 
     for (i = 0; i < 4; i++) {
       write_nibble((uint8_t) ((value >> 12) & 0x0F));
-      value >>= 4;
+      value <<= 4;
     }
 }
 
