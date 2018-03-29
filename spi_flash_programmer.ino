@@ -157,54 +157,24 @@ void loop()
 
   case COMMAND_HELP:
     Serial.println(VERSION);
-    Serial.println("  e     : erase chip");
-    Serial.println("  sXXX  : erase 4k sector XXX (hex)");
-    Serial.println("  c     : print buffer CRC-32");
-    Serial.println("  rXXXX : read 256-uint8_t page XXXX (hex) to buffer");
-    Serial.println("  wXXXX : write buffer to 256-uint8_t page XXXX (hex)");
-    Serial.println("  d     : display the buffer (in hex)");
-    Serial.println("  l<b>  : load the buffer with <b>, where b is 256 uint8_ts of data");
+    Serial.println("  n         : erase chip");
+    Serial.println("  kXXXXXXXX : erase 4k sector XXXXXXXX (hex)");
     Serial.println();
-    Serial.println("Ex: r3700 - read 256 uint8_ts from page 0x3700");
-    Serial.println("Ex: lcafe[...]3737 - load the buffer with 256 uint8_ts, first uint8_t 0xca...");
+    Serial.println("  rXXXXXXXX : read 256b page XXXXXXXX (hex) to buffer");
+    Serial.println("  wXXXXXXXX : write buffer to 256b page XXXXXXXX (hex)");
+    Serial.println();
+    Serial.println("  h         : print buffer CRC-32");
+    Serial.println("  l         : display the buffer (in hex)");
+    Serial.println("  sBBBBBBBB : load the buffer with 256b of data BBBBBBBB...");
+    Serial.println();
+    Serial.println("Examples:");
+    Serial.println("  r00003700      read 256 bytes from page 0x3700 into buffer");
+    Serial.println("  scafe...3737   load the buffer with 256 bytes, first byte is 0xca ...");
     break;
   }
 
   Serial.flush();
 } 
-
-void dump_buffer(void)
-{
-  uint16_t counter;
-
-  for(counter = 0; counter < 256; counter++) {
-    write_hex_u8(buffer[counter]);
-  }
-}
-
-void dump_buffer_crc(void)
-{
-  uint32_t crc = crc_buffer();
-  write_hex_u16((crc >> 16) & 0xFFFF);
-  write_hex_u16(crc & 0xFFFF);
-}
-
-int8_t read_into_buffer(void)
-{
-  uint16_t counter;
-  int16_t tmp;
-
-  for(counter = 0; counter < 256; counter++) {
-    tmp = read_hex_u8();
-    if (tmp == -1) {
-      return 0;
-    }
-
-    buffer[counter] = (uint8_t) tmp;
-  }
-
-  return 1;
-}
 
 uint8_t spi_transfer(uint8_t data)
 {
@@ -299,6 +269,39 @@ void erase_sector(uint32_t address)
   digitalWrite(SLAVESELECT,HIGH);
 
   wait_for_write_enable();
+}
+
+void dump_buffer(void)
+{
+  uint16_t counter;
+
+  for(counter = 0; counter < 256; counter++) {
+    write_hex_u8(buffer[counter]);
+  }
+}
+
+void dump_buffer_crc(void)
+{
+  uint32_t crc = crc_buffer();
+  write_hex_u16((crc >> 16) & 0xFFFF);
+  write_hex_u16(crc & 0xFFFF);
+}
+
+int8_t read_into_buffer(void)
+{
+  uint16_t counter;
+  int16_t tmp;
+
+  for(counter = 0; counter < 256; counter++) {
+    tmp = read_hex_u8();
+    if (tmp == -1) {
+      return 0;
+    }
+
+    buffer[counter] = (uint8_t) tmp;
+  }
+
+  return 1;
 }
 
 int8_t read_nibble(void)
