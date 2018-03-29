@@ -23,6 +23,8 @@ DEFAULT_FLASH_SIZE = 4096  # 4096 kbit = 16 MBit
 DEFAULT_SECTOR_SIZE = 4096
 DEFAULT_PAGE_SIZE = 256
 
+ENCODING = 'iso-8859-1'
+
 
 def logMessage(text):
     puts(colored.white(text))
@@ -64,7 +66,7 @@ class SerialProgrammer:
 
     def _waitForMessage(self, text, tries=3, max_length=100):
         """Wait for the expected message and return True or return False"""
-        data = text.encode('iso-8859-1')
+        data = text.encode(ENCODING)
         return self._waitFor(len(data), lambda _data: data == _data, tries, max_length)
 
     def _waitFor(self, length, check, tries=3, max_length=100):
@@ -82,7 +84,7 @@ class SerialProgrammer:
                 return False
 
             # Debug here
-            # puts("Recv: \'%s\'" % new_data.decode('utf-8'))
+            # puts("Recv: \'%s\'" % new_data.decode(ENCODING))
 
             data = (data + new_data)[-length:]
             if check(data):
@@ -92,7 +94,7 @@ class SerialProgrammer:
 
     def _getUntilMessage(self, text, tries=3, max_length=100):
         """Wait for the expected message and return the data received"""
-        data = text.encode('iso-8859-1')
+        data = text.encode(ENCODING)
         return self._getUntil(len(data), lambda _data: data == _data, tries, max_length)
 
     def _getUntil(self, length, check, tries=3, max_length=1000):
@@ -121,7 +123,7 @@ class SerialProgrammer:
         # Debug here
         # puts("Send: \'%s\'" % command)
 
-        self.sock.write(command.encode('iso-8859-1'))
+        self.sock.write(command.encode(ENCODING))
         self.sock.flush()
 
     def _eraseSector(self, sector):
@@ -136,7 +138,7 @@ class SerialProgrammer:
         if not self._waitForMessage(COMMAND_BUFFER_CRC):
             return None
 
-        crc = self._readExactly(8).decode('iso-8859-1')
+        crc = self._readExactly(8).decode(ENCODING)
         if crc is None:
             return None
 
@@ -199,7 +201,7 @@ class SerialProgrammer:
                 continue
 
             try:
-                return binascii.a2b_hex(page_data.decode('iso-8859-1'))
+                return binascii.a2b_hex(page_data.decode(ENCODING))
             except TypeError:
                 continue
 
@@ -216,7 +218,7 @@ class SerialProgrammer:
         expected_crc = binascii.crc32(data)
         encoded_data = binascii.b2a_hex(data)
 
-        self._sendCommand(COMMAND_BUFFER_STORE + encoded_data.decode('utf-8'))
+        self._sendCommand(COMMAND_BUFFER_STORE + encoded_data.decode(ENCODING))
         if not self._waitForMessage(COMMAND_BUFFER_STORE):
             return False
 
@@ -329,7 +331,7 @@ class SerialProgrammer:
         if message is None:
             return None
 
-        return message.decode('iso-8859-1')
+        return message.decode(ENCODING)
 
     def hello(self):
         """Send a hello message and print the retrieved version string"""
