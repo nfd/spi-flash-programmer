@@ -516,20 +516,16 @@ def main():
         return
 
     def write(args, prog):
-        return prog.hello() and \
-            prog.writeFromFile(args.filename, args.flash_offset, args.file_offset, args.length * 1024)
+        return prog.writeFromFile(args.filename, args.flash_offset, args.file_offset, args.length * 1024)
 
     def read(args, prog):
-        return prog.hello() and \
-             prog.readToFile(args.filename, args.flash_offset, args.length * 1024)
+        return prog.readToFile(args.filename, args.flash_offset, args.length * 1024)
 
     def verify(args, prog):
-        return prog.hello() and \
-             prog.verifyWithFile(args.filename, args.flash_offset, args.file_offset, args.length * 1024)
+        return prog.verifyWithFile(args.filename, args.flash_offset, args.file_offset, args.length * 1024)
 
     def erase(args, prog):
-        return prog.hello() and \
-             prog.erase(args.flash_offset, args.length * 1024)
+        return prog.erase(args.flash_offset, args.length * 1024)
 
     commands = {
             'write': write,
@@ -540,6 +536,11 @@ def main():
 
     if args.command not in commands:
         logError('Invalid command \'%d\'' % args.command)
+        parser.print_help()
+        return
+
+    if not programmer.hello():
+        # Unrecognized device
         parser.print_help()
         return
 

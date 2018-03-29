@@ -54,20 +54,29 @@ Commands
 2: /dev/cu.usbserial
 Done
 
-# Reading flash
+# Read flash
 > python3 spi_flash_programmer_client.py \
 >   -d COM1 -l 4096 -f dump.bin read
+Connected to 'SPI Flash programmer v1.0'
 ....
 
-# Writing flash
+# Write flash (sectors are erased automatically)
 > python3 spi_flash_programmer_client.py \
 >   -d /dev/ttyS1 -l 4096 -f dump.bin write
+Connected to 'SPI Flash programmer v1.0'
 ....
 
-# Verifying flash
+# Verify flash
 > python3 spi_flash_programmer_client.py \
 >   -d /dev/cu.usbserial -l 4096 -f dump.bin verify
+Connected to 'SPI Flash programmer v1.0'
 ....
+
+# Erase flash
+> python3 spi_flash_programmer_client.py \
+>   -d COM1 -l 4096 erase
+Connected to 'SPI Flash programmer v1.0'
+[###########                     ] 383/1024 - 00:01:13
 
 # Help text
 > python3 spi_flash_programmer_client.py -h
@@ -75,19 +84,19 @@ usage: spi_flash_programmer_client.py [-h] [-d DEVICE] [-f FILENAME]
                                       [-l LENGTH] [--rate BAUD_RATE]
                                       [--flash-offset FLASH_OFFSET]
                                       [--file-offset FILE_OFFSET]
-                                      {ports,write,read,verify}
+                                      {ports,write,read,verify,erase}
 
 Interface with an Arduino-based SPI flash programmer
 
 positional arguments:
-  {ports,write,read,verify}
+  {ports,write,read,verify,erase}
                         command to execute
 
 optional arguments:
   -h, --help            show this help message and exit
   -d DEVICE             serial port to communicate with
   -f FILENAME           file to read from / write to
-  -l LENGTH             length to read/write in bytes
+  -l LENGTH             length to read/write in kibi bytes (factor 1024)
   --rate BAUD_RATE      baud-rate of serial connection
   --flash-offset FLASH_OFFSET
                         offset for flash read/write in bytes
