@@ -127,7 +127,7 @@ class SerialProgrammer:
         self.sock.flush()
 
     def _eraseSector(self, sector):
-        self._sendCommand('%s%08x' % (COMMAND_FLASH_ERASE_SECTOR, sector))
+        self._sendCommand('%s%08x' % (COMMAND_FLASH_ERASE_SECTOR, sector * self.pages_per_sector))
         return self._waitForMessage(COMMAND_FLASH_ERASE_SECTOR)
 
     def _readCRC(self):
