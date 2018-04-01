@@ -19,7 +19,7 @@ COMMAND_FLASH_READ = 'r'
 COMMAND_FLASH_WRITE = 'w'
 COMMAND_FLASH_ERASE_SECTOR = 'k'
 
-DEFAULT_FLASH_SIZE = 4096  # 4096 kbit = 16 MBit
+DEFAULT_FLASH_SIZE = 4096 * 1024
 DEFAULT_SECTOR_SIZE = 4096
 DEFAULT_PAGE_SIZE = 256
 
@@ -127,7 +127,7 @@ class SerialProgrammer:
         self.sock.flush()
 
     def _eraseSector(self, sector):
-        self._sendCommand('%s%08x' % (COMMAND_FLASH_ERASE_SECTOR, sector * self.pages_per_sector))
+        self._sendCommand('%s%08x' % (COMMAND_FLASH_ERASE_SECTOR, sector))
         return self._waitForMessage(COMMAND_FLASH_ERASE_SECTOR)
 
     def _readCRC(self):
@@ -492,7 +492,7 @@ def main():
     parser.add_argument('-f', dest='filename', default='flash.bin',
                         help='file to read from / write to')
     parser.add_argument('-l', type=int, dest='length', default=DEFAULT_FLASH_SIZE,
-                        help='length to read/write in kibi bytes (factor 1024)')
+                        help='length to read/write in bytes')
 
     parser.add_argument('--rate', type=int, dest='baud_rate', default=115200,
                         help='baud-rate of serial connection')
@@ -516,16 +516,16 @@ def main():
         return
 
     def write(args, prog):
-        return prog.writeFromFile(args.filename, args.flash_offset, args.file_offset, args.length * 1024)
+        return prog.writeFromFile(args.filename, args.flash_offset, args.file_offset, args.length)
 
     def read(args, prog):
-        return prog.readToFile(args.filename, args.flash_offset, args.length * 1024)
+        return prog.readToFile(args.filename, args.flash_offset, args.length)
 
     def verify(args, prog):
-        return prog.verifyWithFile(args.filename, args.flash_offset, args.file_offset, args.length * 1024)
+        return prog.verifyWithFile(args.filename, args.flash_offset, args.file_offset, args.length)
 
     def erase(args, prog):
-        return prog.erase(args.flash_offset, args.length * 1024)
+        return prog.erase(args.flash_offset, args.length)
 
     commands = {
             'write': write,
