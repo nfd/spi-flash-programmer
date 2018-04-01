@@ -64,7 +64,7 @@ void impl_wait_for_write_enable(void);
 
 uint8_t buffer [PAGE_SIZE];
 
-SPISettings settingsA(100000, MSBFIRST, SPI_MODE0);
+SPISettings settingsA(1000000, MSBFIRST, SPI_MODE0);
 
 void setup()
 {
@@ -132,6 +132,7 @@ void loop()
 
     read_page(address);
     Serial.print(COMMAND_FLASH_READ); // Echo OK
+    dump_buffer_crc();
     break;
 
   case COMMAND_FLASH_WRITE:
@@ -163,6 +164,7 @@ void loop()
     }
 
     Serial.print(COMMAND_BUFFER_STORE); // Echo OK
+    dump_buffer_crc();
     break;
 
   case COMMAND_HELP:
@@ -444,7 +446,7 @@ void impl_read_page(uint32_t address)
   spi_transfer(address & 0xFF);        // bits 15 to 8
   spi_transfer(0);                     // bits 7 to 0
 
-  // Transfer a dummy sector to read data
+  // Transfer a dummy page to read data
   for(counter = 0; counter < PAGE_SIZE; counter++) {
     buffer[counter] = spi_transfer(0xff);
   }

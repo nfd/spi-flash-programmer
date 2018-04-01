@@ -38,15 +38,24 @@ def logError(text):
     puts(colored.red(text))
 
 
+def logDebug(text):
+    puts(colored.cyan(text))
+
+
 class SerialProgrammer:
 
-    def __init__(self, port, baud_rate, sector_size=DEFAULT_SECTOR_SIZE, page_size=DEFAULT_PAGE_SIZE):
+    def __init__(self, port, baud_rate, debug=False, sector_size=DEFAULT_SECTOR_SIZE, page_size=DEFAULT_PAGE_SIZE):
         self.sector_size = sector_size
         self.page_size = page_size
         self.pages_per_sector = self.sector_size // self.page_size
+        self.debug = debug
 
         self.sock = serial.Serial(port, baud_rate, timeout=1)
         time.sleep(2)  # Wait for the Arduino bootloader
+
+    def _debug(self, message):
+        if self.debug:
+            logDebug(message)
 
     def _readExactly(self, length, tries=3):
         """Read exactly n bytes or return None"""
@@ -83,8 +92,7 @@ class SerialProgrammer:
             if max_length < 0:
                 return False
 
-            # Debug here
-            # puts("Recv: \'%s\'" % new_data.decode(ENCODING))
+            self._debug('Recv: \'%s\'' % new_data.decode(ENCODING))
 
             data = (data + new_data)[-length:]
             if check(data):
@@ -120,8 +128,7 @@ class SerialProgrammer:
         return None
 
     def _sendCommand(self, command):
-        # Debug here
-        # puts("Send: \'%s\'" % command)
+        self._debug('Send: \'%s\'' % command)
 
         self.sock.write(command.encode(ENCODING))
         self.sock.flush()
@@ -156,7 +163,14 @@ class SerialProgrammer:
         if not self._waitForMessage(COMMAND_FLASH_READ):
             return None
 
-        return self._readCRC()
+        crc = self._readExactly(8).decode(ENCODING)
+        if crc is None:
+            return None
+
+        try:
+            return int(crc, 16)
+        except ValueError:
+            return None
 
     def _loadPageMultiple(self, page, tries=3):
         """Read a page into the internal buffer
@@ -185,7 +199,7 @@ class SerialProgrammer:
     def _readPage(self, page, tries=3):
         """Read a page from the flash and receive it's contents"""
         # Load page into the buffer
-        self._loadPageMultiple(page, tries)
+        crc = self._loadPageMultiple(page, tries)
 
         for _ in range(tries):
             # Dump the buffer
@@ -201,7 +215,12 @@ class SerialProgrammer:
                 continue
 
             try:
-                return binascii.a2b_hex(page_data.decode(ENCODING))
+                data = binascii.a2b_hex(page_data.decode(ENCODING))
+                if crc == binascii.crc32(data):
+                    return data
+                else:
+                    continue
+
             except TypeError:
                 continue
 
@@ -223,8 +242,15 @@ class SerialProgrammer:
             return False
 
         # This shouldn't fail if we're using a reliable connection.
-        if self._readCRC() != expected_crc:
-            return False
+        crc = self._readExactly(8).decode(ENCODING)
+        if crc is None:
+            return None
+
+        try:
+            if int(crc, 16) != expected_crc:
+                return None
+        except ValueError:
+            return None
 
         # Write page
         self._sendCommand('%s%08x' % (COMMAND_FLASH_WRITE, page))
@@ -346,15 +372,15 @@ class SerialProgrammer:
     def writeFromFile(self, filename, flash_offset=0, file_offset=0, length=DEFAULT_SECTOR_SIZE):
         """Write the data in the file to the flash"""
         if length % self.sector_size != 0:
-            logError("length must be a multiple of the sector size %d" % self.sector_size)
+            logError('length must be a multiple of the sector size %d' % self.sector_size)
             return False
 
         if flash_offset % self.sector_size != 0:
-            logError("flash_offset must be a multiple of the sector size %d" % self.sector_size)
+            logError('flash_offset must be a multiple of the sector size %d' % self.sector_size)
             return False
 
         if file_offset < 0:
-            logError("file_offset must be a positive value or 0")
+            logError('file_offset must be a positive value or 0')
             return False
 
         data = None
@@ -379,11 +405,11 @@ class SerialProgrammer:
     def readToFile(self, filename, flash_offset=0, length=DEFAULT_FLASH_SIZE):
         """Read the data from the flash into the file"""
         if length % self.page_size != 0:
-            logError("length must be a multiple of the page size %d" % self.page_size)
+            logError('length must be a multiple of the page size %d' % self.page_size)
             return False
 
         if flash_offset % self.page_size != 0:
-            logError("flash_offset must be a multiple of the page size %d" % self.page_size)
+            logError('flash_offset must be a multiple of the page size %d' % self.page_size)
             return False
 
         page_count = length // self.page_size
@@ -419,11 +445,11 @@ class SerialProgrammer:
         This method only uses checksums to verify the data integrity.
         """
         if length % self.page_size != 0:
-            logError("length must be a multiple of the page size %d" % self.page_size)
+            logError('length must be a multiple of the page size %d' % self.page_size)
             return False
 
         if flash_offset % self.page_size != 0:
-            logError("flash_offset must be a multiple of the page size %d" % self.page_size)
+            logError('flash_offset must be a multiple of the page size %d' % self.page_size)
             return False
 
         page_count = length // self.page_size
@@ -461,11 +487,11 @@ class SerialProgrammer:
     def erase(self, flash_offset=0, length=DEFAULT_FLASH_SIZE):
         """Write the data in the file to the flash"""
         if length % self.sector_size != 0:
-            logError("length must be a multiple of the sector size %d" % self.sector_size)
+            logError('length must be a multiple of the sector size %d' % self.sector_size)
             return False
 
         if flash_offset % self.sector_size != 0:
-            logError("flash_offset must be a multiple of the sector size %d" % self.sector_size)
+            logError('flash_offset must be a multiple of the sector size %d' % self.sector_size)
             return False
 
         if not self._eraseSectors(flash_offset, length):
@@ -486,7 +512,7 @@ def printComPorts():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Interface with an Arduino-based SPI flash programmer")
+    parser = argparse.ArgumentParser(description='Interface with an Arduino-based SPI flash programmer')
     parser.add_argument('-d', dest='device', default='COM1',
                         help='serial port to communicate with')
     parser.add_argument('-f', dest='filename', default='flash.bin',
@@ -500,6 +526,7 @@ def main():
                         help='offset for flash read/write in bytes')
     parser.add_argument('--file-offset', type=int, dest='file_offset', default=0,
                         help='offset for file read/write in bytes')
+    parser.add_argument('--debug', action='store_true', help='enable debug output')
 
     parser.add_argument('command', choices=('ports', 'write', 'read', 'verify', 'erase'),
                         help='command to execute')
@@ -510,7 +537,7 @@ def main():
         return
 
     try:
-        programmer = SerialProgrammer(args.device, args.baud_rate)
+        programmer = SerialProgrammer(args.device, args.baud_rate, args.debug)
     except serial.SerialException:
         logError('Could not connect to serial port %s' % args.device)
         return
