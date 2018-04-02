@@ -3,12 +3,6 @@
 
 #include <SPI.h>
 
-// SPI pins
-#define DATAOUT 11 // MOSI
-#define DATAIN  12 // MISO
-#define SPICLOCK  13 // SCK
-#define SLAVESELECT 10 // SS
-
 // Command
 #define COMMAND_HELLO '>'
 #define COMMAND_HELP '?'
@@ -64,10 +58,10 @@ void impl_wait_for_write_enable(void);
 
 uint8_t buffer [PAGE_SIZE];
 
-SPISettings settingsA(1000000, MSBFIRST, SPI_MODE0);
-
 void setup()
 {
+  // Use maximum speed with F_CPU / 2
+  SPISettings settingsA(F_CPU / 2, MSBFIRST, SPI_MODE0);
   uint16_t i;
 
   for (i = 0; i < PAGE_SIZE; i += 4)
@@ -80,14 +74,9 @@ void setup()
 
   Serial.begin(115200);
 
-  pinMode(DATAOUT, OUTPUT);
-  pinMode(DATAIN, INPUT);
-  pinMode(SPICLOCK, OUTPUT);
-  pinMode(SLAVESELECT, OUTPUT);
-
-  digitalWrite(SLAVESELECT, HIGH); // disable flash device
-
-  SPI.begin();
+  SPI.begin(); // Initialize pins
+  SPI.beginTransaction(settingsA);
+  digitalWrite(SS, HIGH); // disable flash device
 
   delay(10);
 }
@@ -188,31 +177,26 @@ void loop()
   Serial.flush();
 } 
 
-uint8_t spi_transfer(uint8_t data)
-{
-  return SPI.transfer(data);
-}
-
 void read_page(uint32_t address)
 {
   // Send read command
-  digitalWrite(SLAVESELECT, LOW);
+  digitalWrite(SS, LOW);
   impl_read_page(address);
 
   // Release chip, signal end transfer
-  digitalWrite(SLAVESELECT, HIGH);
+  digitalWrite(SS, HIGH);
 } 
 
 void write_page(uint32_t address)
 {
-  digitalWrite(SLAVESELECT,LOW);
+  digitalWrite(SS,LOW);
   impl_disable_write_protection();
-  digitalWrite(SLAVESELECT,HIGH);
+  digitalWrite(SS,HIGH);
   delay(10);
 
-  digitalWrite(SLAVESELECT,LOW);
+  digitalWrite(SS,LOW);
   impl_write_page(address);
-  digitalWrite(SLAVESELECT, HIGH);
+  digitalWrite(SS, HIGH);
   delay(1); // Wait for 1 ms
 
   impl_wait_for_write_enable();
@@ -220,14 +204,14 @@ void write_page(uint32_t address)
 
 void erase_all()
 {
-  digitalWrite(SLAVESELECT,LOW);
+  digitalWrite(SS,LOW);
   impl_disable_write_protection();
-  digitalWrite(SLAVESELECT,HIGH);
+  digitalWrite(SS,HIGH);
   delay(10); // Wait for 10 ms
 
-  digitalWrite(SLAVESELECT,LOW);
+  digitalWrite(SS,LOW);
   impl_erase_chip();
-  digitalWrite(SLAVESELECT,HIGH);
+  digitalWrite(SS,HIGH);
   delay(1); // Wait for 1 ms
 
   impl_wait_for_write_enable();
@@ -235,14 +219,14 @@ void erase_all()
 
 void erase_sector(uint32_t address)
 {
-  digitalWrite(SLAVESELECT,LOW);
+  digitalWrite(SS,LOW);
   impl_disable_write_protection();
-  digitalWrite(SLAVESELECT,HIGH);
+  digitalWrite(SS,HIGH);
   delay(10);
 
-  digitalWrite(SLAVESELECT,LOW);
+  digitalWrite(SS,LOW);
   impl_erase_sector(address);
-  digitalWrite(SLAVESELECT,HIGH);
+  digitalWrite(SS,HIGH);
 
   impl_wait_for_write_enable();
 }
@@ -421,34 +405,34 @@ uint32_t crc_buffer(void)
 
 void impl_disable_write_protection(void)
 {
-  spi_transfer(WREN); // write enable
+  SPI.transfer(WREN); // write enable
 }
 
 void impl_erase_chip(void)
 {
-  spi_transfer(CHIP_ERASE);
+  SPI.transfer(CHIP_ERASE);
 }
 
 void impl_erase_sector(uint32_t address)
 {
-  spi_transfer(SECTOR_ERASE);            // sector erase instruction
-  spi_transfer((address & 0x0FF0) >> 4); // bits 23 to 16
-  spi_transfer((address & 0x000F) << 4); // bits 15 to 8
-  spi_transfer(0);                       // bits 7 to 0
+  SPI.transfer(SECTOR_ERASE);            // sector erase instruction
+  SPI.transfer((address & 0x0FF0) >> 4); // bits 23 to 16
+  SPI.transfer((address & 0x000F) << 4); // bits 15 to 8
+  SPI.transfer(0);                       // bits 7 to 0
 }
 
 void impl_read_page(uint32_t address)
 {
   uint16_t counter;
 
-  spi_transfer(READ);                  // read instruction
-  spi_transfer((address >> 8) & 0xFF); // bits 23 to 16
-  spi_transfer(address & 0xFF);        // bits 15 to 8
-  spi_transfer(0);                     // bits 7 to 0
+  SPI.transfer(READ);                  // read instruction
+  SPI.transfer((address >> 8) & 0xFF); // bits 23 to 16
+  SPI.transfer(address & 0xFF);        // bits 15 to 8
+  SPI.transfer(0);                     // bits 7 to 0
 
   // Transfer a dummy page to read data
   for(counter = 0; counter < PAGE_SIZE; counter++) {
-    buffer[counter] = spi_transfer(0xff);
+    buffer[counter] = SPI.transfer(0xff);
   }
 }
 
@@ -456,13 +440,13 @@ void impl_write_page(uint32_t address)
 {
   uint16_t counter;
 
-  spi_transfer(WRITE);                 // write instruction
-  spi_transfer((address >> 8) & 0xFF); // bits 23 to 16
-  spi_transfer(address & 0xFF);        // bits 15 to 8
-  spi_transfer(0);                     // bits 7 to 0
+  SPI.transfer(WRITE);                 // write instruction
+  SPI.transfer((address >> 8) & 0xFF); // bits 23 to 16
+  SPI.transfer(address & 0xFF);        // bits 15 to 8
+  SPI.transfer(0);                     // bits 7 to 0
 
   for (counter = 0; counter < PAGE_SIZE; counter++) {
-    spi_transfer(buffer[counter]);
+    SPI.transfer(buffer[counter]);
   }
 }
 
@@ -472,10 +456,10 @@ void impl_wait_for_write_enable(void)
 
   while((statreg & 0x1) == 0x1) {
     // Wait for the chip
-    digitalWrite(SLAVESELECT, LOW);
-    spi_transfer(RDSR);
-    statreg = spi_transfer(RDSR);
-    digitalWrite(SLAVESELECT, HIGH);
+    digitalWrite(SS, LOW);
+    SPI.transfer(RDSR);
+    statreg = SPI.transfer(RDSR);
+    digitalWrite(SS, HIGH);
   }
 }
 
