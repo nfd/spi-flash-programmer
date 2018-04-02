@@ -20,18 +20,15 @@
 #define COMMAND_STATUS_REGISTER_READ 'y'
 #define COMMAND_ERROR '!'
 
-void impl_read_status_register(void);
-void impl_enable_write_protection(void);
-void impl_disable_write_protection(void);
-void impl_check_write_protection(void);
-
 #define WRITE_PROTECTION_NONE 0x00
 #define WRITE_PROTECTION_PARTIAL 0x01
 #define WRITE_PROTECTION_FULL 0x02
+#define WRITE_PROTECTION_UNKOWN 0x03
 
 #define WRITE_PROTECTION_CONFIGURATION_NONE 0x00
 #define WRITE_PROTECTION_CONFIGURATION_PARTIAL 0x01
 #define WRITE_PROTECTION_CONFIGURATION_LOCKED 0x02
+#define WRITE_PROTECTION_CONFIGURATION_UNKOWN 0x03
 
 #define VERSION "SPI Flash programmer v1.0"
 
