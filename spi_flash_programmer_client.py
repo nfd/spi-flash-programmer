@@ -25,6 +25,9 @@ DEFAULT_PAGE_SIZE = 256
 
 ENCODING = 'iso-8859-1'
 
+DEBUG_NORMAL = 1
+DEBUG_VERBOSE = 2
+
 
 def logMessage(text):
     puts(colored.white(text))
@@ -38,15 +41,36 @@ def logError(text):
     puts(colored.red(text))
 
 
+def logDebug(text, type):
+    if type == DEBUG_NORMAL:
+        puts(colored.cyan(text))
+    else:  # DEBUG_VERBOSE
+        puts(colored.magenta(text))
+
+
 class SerialProgrammer:
 
-    def __init__(self, port, baud_rate, sector_size=DEFAULT_SECTOR_SIZE, page_size=DEFAULT_PAGE_SIZE):
+    def __init__(self, port, baud_rate, debug='off', sector_size=DEFAULT_SECTOR_SIZE, page_size=DEFAULT_PAGE_SIZE):
         self.sector_size = sector_size
         self.page_size = page_size
         self.pages_per_sector = self.sector_size // self.page_size
 
+        if debug == 'normal':
+            self.debug = DEBUG_NORMAL
+        elif debug == 'verbose':
+            self.debug = DEBUG_VERBOSE
+        else:  # off
+            self.debug = 0
+
+        self._debug('Opening serial connection')
         self.sock = serial.Serial(port, baud_rate, timeout=1)
+        self._debug('Serial connection opened successfully')
+
         time.sleep(2)  # Wait for the Arduino bootloader
+
+    def _debug(self, message, level=DEBUG_NORMAL):
+        if self.debug >= level:
+            logDebug(message, level)
 
     def _readExactly(self, length, tries=3):
         """Read exactly n bytes or return None"""
@@ -66,6 +90,8 @@ class SerialProgrammer:
 
     def _waitForMessage(self, text, tries=3, max_length=100):
         """Wait for the expected message and return True or return False"""
+        self._debug('Waiting for \'%s\'' % text, DEBUG_VERBOSE)
+
         data = text.encode(ENCODING)
         return self._waitFor(len(data), lambda _data: data == _data, tries, max_length)
 
@@ -83,8 +109,7 @@ class SerialProgrammer:
             if max_length < 0:
                 return False
 
-            # Debug here
-            # puts("Recv: \'%s\'" % new_data.decode(ENCODING))
+            self._debug('Recv: \'%s\'' % new_data.decode(ENCODING), DEBUG_VERBOSE)
 
             data = (data + new_data)[-length:]
             if check(data):
@@ -94,6 +119,8 @@ class SerialProgrammer:
 
     def _getUntilMessage(self, text, tries=3, max_length=100):
         """Wait for the expected message and return the data received"""
+        self._debug('Reading until \'%s\'' % text, DEBUG_VERBOSE)
+
         data = text.encode(ENCODING)
         return self._getUntil(len(data), lambda _data: data == _data, tries, max_length)
 
@@ -112,6 +139,8 @@ class SerialProgrammer:
             if max_length < 0:
                 return None
 
+            self._debug('Recv: \'%s\'' % new_data.decode(ENCODING), DEBUG_VERBOSE)
+
             message = (message + new_data)[-length:]
             data += new_data
             if check(message):
@@ -120,49 +149,69 @@ class SerialProgrammer:
         return None
 
     def _sendCommand(self, command):
-        # Debug here
-        # puts("Send: \'%s\'" % command)
+        self._debug('Send: \'%s\'' % command, DEBUG_VERBOSE)
 
         self.sock.write(command.encode(ENCODING))
         self.sock.flush()
 
     def _eraseSector(self, sector):
+        self._debug('Command: ERASE_SECTOR %d' % sector)
+
         self._sendCommand('%s%08x' % (COMMAND_FLASH_ERASE_SECTOR, sector))
         return self._waitForMessage(COMMAND_FLASH_ERASE_SECTOR)
 
     def _readCRC(self):
+        self._debug('Command: BUFFER_CRC')
+
         # Write crc check
         self._sendCommand(COMMAND_BUFFER_CRC)
 
         # Wait for crc start
         if not self._waitForMessage(COMMAND_BUFFER_CRC):
+            self._debug('Invalid / no response for BUFFER_CRC command')
             return None
 
         crc = self._readExactly(8).decode(ENCODING)
         if crc is None:
+            self._debug('Invalid / no CRC response')
             return None
 
         try:
             return int(crc, 16)
         except ValueError:
+            self._debug('Could not decode CRC')
             return None
 
     def _loadPageOnce(self, page, tries=3):
         """Read a page into the internal buffer"""
+        self._debug('Command: FLASH_READ %d' % page)
+
         # Reads page
         self._sendCommand('%s%08x' % (COMMAND_FLASH_READ, page))
 
         # Wait for read acknowledge
         if not self._waitForMessage(COMMAND_FLASH_READ):
+            self._debug('Invalid / no response for FLASH_READ command')
             return None
 
-        return self._readCRC()
+        crc = self._readExactly(8).decode(ENCODING)
+        if crc is None:
+            self._debug('Invalid / no CRC response')
+            return None
+
+        try:
+            return int(crc, 16)
+        except ValueError:
+            self._debug('Could not decode CRC')
+            return None
 
     def _loadPageMultiple(self, page, tries=3):
         """Read a page into the internal buffer
 
         Keeps reading until we get two page reads the same checksum.
         """
+        self._debug('Command: FLASH_READ_MULTIPLE %d' % page)
+
         crc_list = []
         _try = 0
 
@@ -172,20 +221,24 @@ class SerialProgrammer:
                 _try += 1
                 continue
 
-            if len(crc_list) > 1:
+            if len(crc_list) >= 1:
                 if crc in crc_list:
+                    self._debug('CRC is valid')
                     return crc
                 else:
                     _try += 1
 
             crc_list.append(crc)
 
+        self._debug('CRC reads did not match once')
         return None
 
     def _readPage(self, page, tries=3):
         """Read a page from the flash and receive it's contents"""
+        self._debug('Command: FLASH_READ_PAGE %d' % page)
+
         # Load page into the buffer
-        self._loadPageMultiple(page, tries)
+        crc = self._loadPageMultiple(page, tries)
 
         for _ in range(tries):
             # Dump the buffer
@@ -193,18 +246,29 @@ class SerialProgrammer:
 
             # Wait for data start
             if not self._waitForMessage(COMMAND_BUFFER_LOAD):
+                self._debug('Invalid / no response for BUFFER_LOAD command')
                 continue
 
             # Load successful -> read sector with 2 nibbles per byte
             page_data = self._readExactly(self.page_size * 2)
             if page_data is None:
+                self._debug('Invalid / no response for page data')
                 continue
 
             try:
-                return binascii.a2b_hex(page_data.decode(ENCODING))
+                data = binascii.a2b_hex(page_data.decode(ENCODING))
+                if crc == binascii.crc32(data):
+                    self._debug('CRC did match with read data')
+                    return data
+                else:
+                    self._debug('CRC did not match with read data')
+                    continue
+
             except TypeError:
+                self._debug('CRC could not be parsed')
                 continue
 
+        self._debug('Page read tries exceeded')
         return None
 
     def _writePage(self, page, data):
@@ -220,23 +284,35 @@ class SerialProgrammer:
 
         self._sendCommand(COMMAND_BUFFER_STORE + encoded_data.decode(ENCODING))
         if not self._waitForMessage(COMMAND_BUFFER_STORE):
+            self._debug('Invalid / no response for BUFFER_STORE command')
             return False
 
         # This shouldn't fail if we're using a reliable connection.
-        if self._readCRC() != expected_crc:
-            return False
+        crc = self._readExactly(8).decode(ENCODING)
+        if crc is None:
+            self._debug('Invalid / no CRC response for buffer write')
+            return None
+
+        try:
+            if int(crc, 16) != expected_crc:
+                return None
+        except ValueError:
+            self._debug('Could not decode CRC')
+            return None
 
         # Write page
         self._sendCommand('%s%08x' % (COMMAND_FLASH_WRITE, page))
         time.sleep(.2)  # Sleep 200 ms
 
         if not self._waitForMessage(COMMAND_FLASH_WRITE):
+            self._debug('Invalid / no response for FLASH_WRITE command')
             return False
 
         # Read back page
         # Fail if we can't read what we wrote
         read_crc = self._loadPageMultiple(page)
         if read_crc is None:
+            self._debug('Invalid / no CRC response for flash write')
             return False
 
         return (read_crc == expected_crc)
@@ -320,15 +396,19 @@ class SerialProgrammer:
 
     def _hello(self):
         """Send a hello message and expect a version string"""
+        self._debug('Command: HELLO')
+
         # Write hello
         self._sendCommand(COMMAND_HELLO)
 
         # Wait for hello response start
         if not self._waitForMessage(COMMAND_HELLO):
+            self._debug('Invalid / no response for HELLO command')
             return None
 
         message = self._getUntilMessage(COMMAND_HELLO)
         if message is None:
+            self._debug('No termination for HELLO command')
             return None
 
         return message.decode(ENCODING)
@@ -346,15 +426,15 @@ class SerialProgrammer:
     def writeFromFile(self, filename, flash_offset=0, file_offset=0, length=DEFAULT_SECTOR_SIZE):
         """Write the data in the file to the flash"""
         if length % self.sector_size != 0:
-            logError("length must be a multiple of the sector size %d" % self.sector_size)
+            logError('length must be a multiple of the sector size %d' % self.sector_size)
             return False
 
         if flash_offset % self.sector_size != 0:
-            logError("flash_offset must be a multiple of the sector size %d" % self.sector_size)
+            logError('flash_offset must be a multiple of the sector size %d' % self.sector_size)
             return False
 
         if file_offset < 0:
-            logError("file_offset must be a positive value or 0")
+            logError('file_offset must be a positive value or 0')
             return False
 
         data = None
@@ -379,11 +459,11 @@ class SerialProgrammer:
     def readToFile(self, filename, flash_offset=0, length=DEFAULT_FLASH_SIZE):
         """Read the data from the flash into the file"""
         if length % self.page_size != 0:
-            logError("length must be a multiple of the page size %d" % self.page_size)
+            logError('length must be a multiple of the page size %d' % self.page_size)
             return False
 
         if flash_offset % self.page_size != 0:
-            logError("flash_offset must be a multiple of the page size %d" % self.page_size)
+            logError('flash_offset must be a multiple of the page size %d' % self.page_size)
             return False
 
         page_count = length // self.page_size
@@ -419,11 +499,11 @@ class SerialProgrammer:
         This method only uses checksums to verify the data integrity.
         """
         if length % self.page_size != 0:
-            logError("length must be a multiple of the page size %d" % self.page_size)
+            logError('length must be a multiple of the page size %d' % self.page_size)
             return False
 
         if flash_offset % self.page_size != 0:
-            logError("flash_offset must be a multiple of the page size %d" % self.page_size)
+            logError('flash_offset must be a multiple of the page size %d' % self.page_size)
             return False
 
         page_count = length // self.page_size
@@ -461,11 +541,11 @@ class SerialProgrammer:
     def erase(self, flash_offset=0, length=DEFAULT_FLASH_SIZE):
         """Write the data in the file to the flash"""
         if length % self.sector_size != 0:
-            logError("length must be a multiple of the sector size %d" % self.sector_size)
+            logError('length must be a multiple of the sector size %d' % self.sector_size)
             return False
 
         if flash_offset % self.sector_size != 0:
-            logError("flash_offset must be a multiple of the sector size %d" % self.sector_size)
+            logError('flash_offset must be a multiple of the sector size %d' % self.sector_size)
             return False
 
         if not self._eraseSectors(flash_offset, length):
@@ -486,7 +566,7 @@ def printComPorts():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Interface with an Arduino-based SPI flash programmer")
+    parser = argparse.ArgumentParser(description='Interface with an Arduino-based SPI flash programmer')
     parser.add_argument('-d', dest='device', default='COM1',
                         help='serial port to communicate with')
     parser.add_argument('-f', dest='filename', default='flash.bin',
@@ -500,6 +580,8 @@ def main():
                         help='offset for flash read/write in bytes')
     parser.add_argument('--file-offset', type=int, dest='file_offset', default=0,
                         help='offset for file read/write in bytes')
+    parser.add_argument('--debug', choices=('off', 'normal', 'verbose'), default='off',
+                        help='enable debug output')
 
     parser.add_argument('command', choices=('ports', 'write', 'read', 'verify', 'erase'),
                         help='command to execute')
@@ -510,7 +592,7 @@ def main():
         return
 
     try:
-        programmer = SerialProgrammer(args.device, args.baud_rate)
+        programmer = SerialProgrammer(args.device, args.baud_rate, args.debug)
     except serial.SerialException:
         logError('Could not connect to serial port %s' % args.device)
         return
