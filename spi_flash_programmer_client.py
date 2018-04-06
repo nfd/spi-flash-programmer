@@ -19,6 +19,21 @@ COMMAND_FLASH_READ = 'r'
 COMMAND_FLASH_WRITE = 'w'
 COMMAND_FLASH_ERASE_SECTOR = 'k'
 
+COMMAND_WRITE_PROTECTION_ENABLE = 'p'
+COMMAND_WRITE_PROTECTION_DISABLE = 'u'
+COMMAND_WRITE_PROTECTION_CHECK = 'x'
+COMMAND_STATUS_REGISTER_READ = 'y'
+
+WRITE_PROTECTION_NONE = 0x00
+WRITE_PROTECTION_PARTIAL = 0x01
+WRITE_PROTECTION_FULL = 0x02
+WRITE_PROTECTION_UNKOWN = 0x03
+
+WRITE_PROTECTION_CONFIGURATION_NONE = 0x00
+WRITE_PROTECTION_CONFIGURATION_PARTIAL = 0x01
+WRITE_PROTECTION_CONFIGURATION_LOCKED = 0x02
+WRITE_PROTECTION_CONFIGURATION_UNKOWN = 0x03
+
 DEFAULT_FLASH_SIZE = 4096 * 1024
 DEFAULT_SECTOR_SIZE = 4096
 DEFAULT_PAGE_SIZE = 256
@@ -555,6 +570,118 @@ class SerialProgrammer:
 
         return True
 
+    def set_write_protection(self, enable=False):
+        """Set or clear the write protection of the flash"""
+        self._debug('Command: WITE_PROTECTION %s' % enable)
+
+        # Write command
+        if enable:  # Enable
+            self._sendCommand(COMMAND_WRITE_PROTECTION_ENABLE)
+            if not self._waitForMessage(COMMAND_WRITE_PROTECTION_ENABLE):
+                self._debug('Invalid / no response for WITE_PROTECTION command')
+                logError('Invalid response')
+                return True
+        else:  # Disable
+            self._sendCommand(COMMAND_WRITE_PROTECTION_DISABLE)
+            if not self._waitForMessage(COMMAND_WRITE_PROTECTION_DISABLE):
+                self._debug('Invalid / no response for WITE_PROTECTION command')
+                logError('Invalid response')
+                return True
+
+        logOk('Done')
+        return True
+
+    def check_write_protection(self):
+        """Check the write protection of the flash"""
+        self._debug('Command: WITE_PROTECTION_CHECK')
+
+        self._sendCommand(COMMAND_WRITE_PROTECTION_CHECK)
+        if not self._waitForMessage(COMMAND_WRITE_PROTECTION_CHECK):
+            self._debug('Invalid / no response for WRITE_PROTECTION_CHECK command')
+            logError('Invalid response')
+            return True
+
+        protection = self._readExactly(4).decode(ENCODING)
+        if protection is None:
+            self._debug('Invalid / no response for protection check')
+            logError('Invalid response')
+            return True
+
+        try:
+            configuration_protection = int(protection[0:2], 16)
+            write_protection = int(protection[2:4], 16)
+
+            if configuration_protection == WRITE_PROTECTION_CONFIGURATION_NONE:
+                logMessage('Configuration is unprotected')
+            elif configuration_protection == WRITE_PROTECTION_CONFIGURATION_PARTIAL:
+                logMessage('Configuration is partially protected')
+            elif configuration_protection == WRITE_PROTECTION_CONFIGURATION_FULL:
+                logMessage('Configuration is fully protected')
+            elif configuration_protection == WRITE_PROTECTION_CONFIGURATION_UNKOWN:
+                logMessage('Configuration protection is unknown')
+            else:
+                logError('Unknown configuration protection status')
+
+            if write_protection == WRITE_PROTECTION_NONE:
+                logMessage('Flash content is unprotected')
+            elif write_protection == WRITE_PROTECTION_PARTIAL:
+                logMessage('Flash content is partially protected')
+            elif write_protection == WRITE_PROTECTION_FULL:
+                logMessage('Flash content is fully protected')
+            elif write_protection == WRITE_PROTECTION_UNKOWN:
+                logMessage('Flash content protection is unkown')
+            else:
+                logError('Unknown flash protection status')
+
+        except ValueError:
+            self._debug('Could not decode protection status')
+            logError('Invalid protection status')
+            return True
+
+        logOk('Done')
+        return True
+
+    def read_status_register(self):
+        """Reads the status register contents"""
+        self._debug('Command: STATUS_REGISTER')
+
+        self._sendCommand(COMMAND_STATUS_REGISTER_READ)
+        if not self._waitForMessage(COMMAND_STATUS_REGISTER_READ):
+            self._debug('Invalid / no response for STATUS_REGISTER command')
+            logError('Invalid response')
+            return True
+
+        length_str = self._readExactly(2).decode(ENCODING)
+        if length_str is None:
+            self._debug('Invalid / no response for status register length')
+            logError('Invalid response')
+            return True
+
+        try:
+            length = int(length_str, 16)
+        except ValueError:
+            self._debug('Could not decode status register length')
+            logError('Invalid register length')
+            return True
+
+        status_str = self._readExactly(length * 2).decode(ENCODING)
+        if status_str is None:
+            self._debug('Invalid / no response for status register check')
+            logError('Invalid response')
+            return True
+
+        try:  # Check if valid status data
+            decoded_status = binascii.a2b_hex(status_str)
+        except TypeError:
+            self._debug('Could not decode status register content')
+            logError('Invalid response')
+            return True
+
+        for offset, status_row in [(i, status_str[i:i+16]) for i in range(0, len(status_str), 16)]:
+            logMessage('%08x: %s' % (offset, ' '.join([status_row[i:i+4] for i in range(0, 16, 4)])))
+
+        return True
+
 
 def printComPorts():
     logMessage('Available COM ports:')
@@ -583,7 +710,9 @@ def main():
     parser.add_argument('--debug', choices=('off', 'normal', 'verbose'), default='off',
                         help='enable debug output')
 
-    parser.add_argument('command', choices=('ports', 'write', 'read', 'verify', 'erase'),
+    parser.add_argument('command', choices=('ports', 'write', 'read', 'verify', 'erase',
+                                            'enable-protection', 'disable-protection', 'check-protection',
+                                            'status-register'),
                         help='command to execute')
 
     args = parser.parse_args()
@@ -609,11 +738,27 @@ def main():
     def erase(args, prog):
         return prog.erase(args.flash_offset, args.length)
 
+    def enable_protection(args, prog):
+        return prog.set_write_protection(True)
+
+    def disable_protection(args, prog):
+        return prog.set_write_protection(False)
+
+    def check_protection(args, prog):
+        return prog.check_write_protection()
+
+    def read_status_register(args, prog):
+        return prog.read_status_register()
+
     commands = {
             'write': write,
             'read': read,
             'verify': verify,
-            'erase': erase
+            'erase': erase,
+            'enable-protection': enable_protection,
+            'disable-protection': disable_protection,
+            'check-protection': check_protection,
+            'status-register': read_status_register
         }
 
     if args.command not in commands:
