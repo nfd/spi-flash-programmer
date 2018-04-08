@@ -27,12 +27,12 @@ COMMAND_STATUS_REGISTER_READ = 'y'
 WRITE_PROTECTION_NONE = 0x00
 WRITE_PROTECTION_PARTIAL = 0x01
 WRITE_PROTECTION_FULL = 0x02
-WRITE_PROTECTION_UNKOWN = 0x03
+WRITE_PROTECTION_UNKNOWN = 0x03
 
 WRITE_PROTECTION_CONFIGURATION_NONE = 0x00
 WRITE_PROTECTION_CONFIGURATION_PARTIAL = 0x01
 WRITE_PROTECTION_CONFIGURATION_LOCKED = 0x02
-WRITE_PROTECTION_CONFIGURATION_UNKOWN = 0x03
+WRITE_PROTECTION_CONFIGURATION_UNKNOWN = 0x03
 
 DEFAULT_FLASH_SIZE = 4096 * 1024
 DEFAULT_SECTOR_SIZE = 4096
@@ -617,7 +617,7 @@ class SerialProgrammer:
                 logMessage('Configuration is partially protected')
             elif configuration_protection == WRITE_PROTECTION_CONFIGURATION_FULL:
                 logMessage('Configuration is fully protected')
-            elif configuration_protection == WRITE_PROTECTION_CONFIGURATION_UNKOWN:
+            elif configuration_protection == WRITE_PROTECTION_CONFIGURATION_UNKNOWN:
                 logMessage('Configuration protection is unknown')
             else:
                 logError('Unknown configuration protection status')
@@ -628,8 +628,8 @@ class SerialProgrammer:
                 logMessage('Flash content is partially protected')
             elif write_protection == WRITE_PROTECTION_FULL:
                 logMessage('Flash content is fully protected')
-            elif write_protection == WRITE_PROTECTION_UNKOWN:
-                logMessage('Flash content protection is unkown')
+            elif write_protection == WRITE_PROTECTION_UNKNOWN:
+                logMessage('Flash content protection is UNKNOWN')
             else:
                 logError('Unknown flash protection status')
 
