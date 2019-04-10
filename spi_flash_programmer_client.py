@@ -486,7 +486,7 @@ class SerialProgrammer:
     def writeFromFile(self, filename, flash_offset=0, file_offset=0, length=DEFAULT_SECTOR_SIZE, pad=None):
         """Write the data from file to the flash"""
         if pad == None:
-            if length % self.sector_size != 0:
+            if (length != -1) and (length % self.sector_size != 0):
                 logError('length must be a multiple of the sector size %d' % self.sector_size)
                 return False
 
@@ -529,6 +529,9 @@ class SerialProgrammer:
             data = data + pad_value*(post_pad)
 
             flash_offset = flash_offset & (self.sector_size-0x1)
+        elif (length == -1) and (len(data) % self.sector_size != 0):
+            logError('file size must be a multiple of the sector size %d, use --pad' % self.sector_size)
+            return False
 
         if not self._writeSectors(flash_offset, data):
             logError('Aborting')
