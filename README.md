@@ -93,29 +93,31 @@ Connected to 'SPI Flash programmer v1.0'
 usage: spi_flash_programmer_client.py [-h] [-d DEVICE] [-f FILENAME]
                                       [-l LENGTH] [--rate BAUD_RATE]
                                       [--flash-offset FLASH_OFFSET]
-                                      [--file-offset FILE_OFFSET]
-                                      {ports,write,read,verify,erase}
+                                      [--file-offset FILE_OFFSET] [--pad PAD]
+                                      [--debug {off,normal,verbose}] [--io IO]
+                                      [--value VALUE]
+                                      {ports,write,read,verify,erase,enable-protection,disable-protection,check-protection,status-register,id-register,set-cs-io,set-output}
 
 Interface with an Arduino-based SPI flash programmer
 
 positional arguments:
-  {ports,write,read,verify,erase,
-   enable-protection,disable-protection,check-protection,
-   status-register,
-   set-cs-io,set-output}
+  {ports,write,read,verify,erase,enable-protection,disable-protection,check-protection,status-register,id-register,set-cs-io,set-output}
                         command to execute
 
 optional arguments:
   -h, --help            show this help message and exit
   -d DEVICE             serial port to communicate with
   -f FILENAME           file to read from / write to
-  -l LENGTH             length to read/write in kibi bytes (factor 1024)
+  -l LENGTH             length to read/write in bytes, use -1 to write entire
+                        file
   --rate BAUD_RATE      baud-rate of serial connection
   --flash-offset FLASH_OFFSET
                         offset for flash read/write in bytes
   --file-offset FILE_OFFSET
                         offset for file read/write in bytes
   --pad PAD             pad value if file is not algined with SECTOR_SIZE
+  --debug {off,normal,verbose}
+                        enable debug output
   --io IO               IO pin used for set-cs-io and set-output
   --value VALUE         value used for set-output
 ```
