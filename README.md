@@ -78,6 +78,16 @@ Connected to 'SPI Flash programmer v1.0'
 Connected to 'SPI Flash programmer v1.0'
 [###########                     ] 383/1024 - 00:01:13
 
+# Set IO Pin value
+# Example: IO pin 0x2, set to LOW
+> python3 spi_flash_programmer_client.py \
+>   -d COM1 --io 0x2 --value 0x0 set-output
+
+# Override ChipSelect pin
+# Example: use IO pin 13/0xd
+> python3 spi_flash_programmer_client.py \
+>   -d COM1 --io 0xd set-cs-io
+
 # Help text
 > python3 spi_flash_programmer_client.py -h
 usage: spi_flash_programmer_client.py [-h] [-d DEVICE] [-f FILENAME]
@@ -89,7 +99,10 @@ usage: spi_flash_programmer_client.py [-h] [-d DEVICE] [-f FILENAME]
 Interface with an Arduino-based SPI flash programmer
 
 positional arguments:
-  {ports,write,read,verify,erase}
+  {ports,write,read,verify,erase,
+   enable-protection,disable-protection,check-protection,
+   status-register,
+   set-cs-io,set-output}
                         command to execute
 
 optional arguments:
@@ -102,6 +115,9 @@ optional arguments:
                         offset for flash read/write in bytes
   --file-offset FILE_OFFSET
                         offset for file read/write in bytes
+  --pad PAD             pad value if file is not algined with SECTOR_SIZE
+  --io IO               IO pin used for set-cs-io and set-output
+  --value VALUE         value used for set-output
 ```
 
 Troubleshooting
@@ -150,3 +166,18 @@ I guess if you do a system upgrade which puts the kernel image somewhere after t
 
 If you try this, let me know!
 
+Flashing iCE40HX8K-EVB from Olimex
+==================================
+This example uses the OLIMEXINO-32U4 to flash a Olimex iCE40HX8K-EVB. The steps should also work with a iCE40HX1K-EVB.
+
+The board is connected using the UEXT connector.
+```bash
+# Set iCE40-CRESET LOW - PIN 0x2
+> python3 spi_flash_programmer_client.py -d COM1 --io 0x2 --value 0x0 set-output
+# Set CS/SS to PIN 13/0xd
+> python3 spi_flash_programmer_client.py -d COM1 --io 0xd set-cs-io
+# power cycle the EVB, check if STATUS register is readable
+> python3 spi_flash_programmer_client.py -d COM1 --io 0xd status-register
+# program the bitmap
+> python3 spi_flash_programmer_client.py -d COM1 -l -1 --pad 0xff -f toplevel_bitmap.bin write
+```
