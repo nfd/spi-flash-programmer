@@ -19,6 +19,8 @@
 #define COMMAND_WRITE_PROTECTION_CHECK 'x'
 #define COMMAND_STATUS_REGISTER_READ 'y'
 #define COMMAND_ERROR '!'
+#define COMMAND_SET_CS '*'
+#define COMMAND_SET_OUTPUT 'o'
 
 #define WRITE_PROTECTION_NONE 0x00
 #define WRITE_PROTECTION_PARTIAL 0x01
@@ -48,8 +50,8 @@ uint32_t crc_buffer(void);
 void wait_for_write_enable(void);
 
 int8_t read_nibble(void);
-int16_t read_hex_u8(void);
-int32_t read_hex_u16(void);
+int8_t read_hex_u8(uint8_t *value);
+int8_t read_hex_u16(uint16_t *value);
 int8_t read_hex_u32(uint32_t *value);
 void write_hex_u8(uint8_t value);
 void write_hex_u16(uint16_t value);
@@ -66,9 +68,12 @@ void impl_write_protection_check(void);
 void impl_wait_for_write_enable(void);
 
 uint8_t buffer [PAGE_SIZE];
+uint8_t nCsIo;
 
 void setup()
 {
+  nCsIo = SS;
+  
   // Use maximum speed with F_CPU / 2
   SPISettings settingsA(F_CPU / 2, MSBFIRST, SPI_MODE0);
   uint16_t i;
@@ -85,7 +90,8 @@ void setup()
 
   SPI.begin(); // Initialize pins
   SPI.beginTransaction(settingsA);
-  digitalWrite(SS, HIGH); // disable flash device
+  pinMode(nCsIo, OUTPUT);
+  digitalWrite(nCsIo, HIGH); // disable flash device
 
   delay(10);
 }
@@ -93,6 +99,8 @@ void setup()
 void loop()
 {
   uint32_t address;
+  uint8_t tmp8;
+  uint16_t tmp16;
 
   // Wait for command
   while(Serial.available() == 0) {
@@ -185,6 +193,40 @@ void loop()
     impl_status_register_read();
     break;
 
+  case COMMAND_SET_CS:
+    if(!read_hex_u8(&tmp8)) {
+      Serial.print(COMMAND_ERROR); // Echo Error
+      break;
+    }
+    if (tmp8 != nCsIo) {
+      if (nCsIo != SS) 
+        pinMode(nCsIo, INPUT);
+      nCsIo=tmp8;
+      pinMode(nCsIo, OUTPUT);
+      digitalWrite(nCsIo, HIGH); // disable flash device
+    }
+
+    Serial.print(COMMAND_SET_CS); // Echo OK
+    break;
+
+  case COMMAND_SET_OUTPUT:
+    if(!read_hex_u16(&tmp16)) {
+      Serial.print(COMMAND_ERROR); // Echo Error
+      break;
+    }
+    pinMode(tmp16>>8, OUTPUT);
+    if (tmp16 & 0xf0) {
+      if (tmp16 & 0xf) {
+        digitalWrite(tmp16>>8, HIGH);
+      }
+      else {
+        digitalWrite(tmp16>>8, LOW);
+      }
+    }
+    
+    Serial.print(COMMAND_SET_OUTPUT); // Echo OK
+    break;
+
   case COMMAND_HELP:
     Serial.println(VERSION);
     Serial.println("  n         : erase chip");
@@ -202,6 +244,9 @@ void loop()
     Serial.println("  l         : display the buffer (in hex)");
     Serial.println("  sBBBBBBBB : load the buffer with a page size of data BBBBBBBB...");
     Serial.println();
+    Serial.println("  *XX       : set IO XX as CS/SS");
+    Serial.println("  oXXYZ     : set IO XX as output, set value Z if Y!=0");
+    Serial.println();
     Serial.println("Examples:");
     Serial.println("  r00003700      read data from page 0x3700 into buffer");
     Serial.println("  scafe...3737   load the buffer with a page of data, first byte is 0xca ...");
@@ -214,23 +259,23 @@ void loop()
 void read_page(uint32_t address)
 {
   // Send read command
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   impl_read_page(address);
 
   // Release chip, signal end transfer
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
 } 
 
 void write_page(uint32_t address)
 {
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   impl_enable_write();
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
   delay(10);
 
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   impl_write_page(address);
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
   delay(1); // Wait for 1 ms
 
   impl_wait_for_write_enable();
@@ -238,14 +283,14 @@ void write_page(uint32_t address)
 
 void erase_all()
 {
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   impl_enable_write();
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
   delay(10); // Wait for 10 ms
 
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   impl_erase_chip();
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
   delay(1); // Wait for 1 ms
 
   impl_wait_for_write_enable();
@@ -253,14 +298,14 @@ void erase_all()
 
 void erase_sector(uint32_t address)
 {
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   impl_enable_write();
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
   delay(10);
 
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   impl_erase_sector(address);
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
 
   impl_wait_for_write_enable();
 }
@@ -284,11 +329,10 @@ void dump_buffer_crc(void)
 int8_t read_into_buffer(void)
 {
   uint16_t counter;
-  int16_t tmp;
+  uint8_t tmp;
 
   for(counter = 0; counter < PAGE_SIZE; counter++) {
-    tmp = read_hex_u8();
-    if (tmp == -1) {
+    if (!read_hex_u8(&tmp)) {
       return 0;
     }
 
@@ -317,40 +361,44 @@ int8_t read_nibble(void)
   }
 }
 
-int32_t read_hex_u16(void)
+int8_t read_hex_u16(uint16_t *value)
 {
   int8_t i, tmp;
-  uint16_t value = 0;
+  uint16_t result = 0;
 
   for (i = 0; i < 4; i++) {
     tmp = read_nibble();
     if (tmp == -1) {
-      return -1;
+      return 0;
     }
 
-    value <<= 4;
-    value |= ((uint8_t) tmp) & 0x0F;
+    result <<= 4;
+    result |= ((uint8_t) tmp) & 0x0F;
   }
 
-  return value;
+  (*value) = result;
+
+  return 1;
 }
 
-int16_t read_hex_u8(void)
+int8_t read_hex_u8(uint8_t *value)
 {
   int8_t i, tmp;
-  uint8_t value = 0;
+  uint8_t result = 0;
 
   for (i = 0; i < 2; i++) {
     tmp = read_nibble();
     if (tmp == -1) {
-      return -1;
+      return 0;
     }
 
-    value <<= 4;
-    value |= ((uint8_t) tmp) & 0x0F;
+    result <<= 4;
+    result |= ((uint8_t) tmp) & 0x0F;
   }
 
-  return value;
+  (*value) = result;
+
+  return 1;
 }
 
 int8_t read_hex_u32(uint32_t *value)
@@ -361,7 +409,7 @@ int8_t read_hex_u32(uint32_t *value)
   for (i = 0; i < 8; i++) {
     tmp = read_nibble();
     if (tmp == -1) {
-      return -1;
+      return 0;
     }
 
     result <<= 4;
@@ -515,10 +563,10 @@ void impl_wait_for_write_enable(void)
 
   while((statreg & 0x1) == 0x1) {
     // Wait for the chip
-    digitalWrite(SS, LOW);
+    digitalWrite(nCsIo, LOW);
     SPI.transfer(RDSR);
     statreg = SPI.transfer(RDSR);
-    digitalWrite(SS, HIGH);
+    digitalWrite(nCsIo, HIGH);
   }
 }
 
@@ -527,22 +575,22 @@ void impl_write_protection_check(void)
   uint32_t statusRegister;
 
   // Read status register 1
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(RDSR);
   statusRegister = ((uint32_t) SPI.transfer(RDSR));
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
 
   // Read status register 2
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(RDSR2);
   statusRegister |= ((uint32_t) SPI.transfer(RDSR2)) << 8;
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
 
   // Read status register 3
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(RDSR3);
   statusRegister |= ((uint32_t) SPI.transfer(RDSR3)) << 16;
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
 
   if (statusRegister & SRP1) {
     write_hex_u8(WRITE_PROTECTION_CONFIGURATION_LOCKED);
@@ -583,38 +631,38 @@ void impl_write_protection_disable(void)
   uint8_t statusRegister2;
 
   // Read status register 1
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(RDSR);
   statusRegister = SPI.transfer(RDSR);
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
 
   // Read status register 2
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(RDSR2);
   statusRegister2 = SPI.transfer(RDSR2);
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
 
   // Set chip as writable
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(WREN); // Write enable
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
   delay(10);
 
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(WRSR);                         // Write register instruction
   SPI.transfer(statusRegister & ~BP);         // Force SR1 to XXX000XX
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
 
   // Set chip as writable
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(WREN); // Write enable
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
   delay(10);
 
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(WRSR2);                        // Write register 2 instruction
   SPI.transfer(statusRegister2 & ~(CP >> 8)); // Force SR2 to X0XXXXXX
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
   delay(1);
 
   impl_wait_for_write_enable();
@@ -626,38 +674,38 @@ void impl_write_protection_enable(void)
   uint8_t statusRegister2;
 
   // Read status register 1
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(RDSR);
   statusRegister = SPI.transfer(RDSR);
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
 
   // Read status register 2
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(RDSR2);
   statusRegister2 = SPI.transfer(RDSR2);
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
 
   // Set chip as writable
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(WREN); // Write enable
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
   delay(10);
 
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(WRSR);                         // Write register instruction
   SPI.transfer(statusRegister | BP);          // Force SR1 to XXX111XX
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
 
   // Set chip as writable
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(WREN); // Write enable
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
   delay(10);
 
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(WRSR2);                        // Write register 2 instruction
   SPI.transfer(statusRegister2 & ~(CP >> 8)); // Force SR2 to X0XXXXXX
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
   delay(1);
 
   impl_wait_for_write_enable();
@@ -670,22 +718,22 @@ void impl_status_register_read(void)
   uint8_t statusRegister3;
 
   // Read status register 1
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(RDSR);
   statusRegister = SPI.transfer(RDSR);
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
 
   // Read status register 2
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(RDSR2);
   statusRegister2 = SPI.transfer(RDSR2);
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
 
   // Read status register 3
-  digitalWrite(SS, LOW);
+  digitalWrite(nCsIo, LOW);
   SPI.transfer(RDSR3);
   statusRegister3 = SPI.transfer(RDSR3);
-  digitalWrite(SS, HIGH);
+  digitalWrite(nCsIo, HIGH);
 
   // Send status register length
   write_hex_u8(0x03);

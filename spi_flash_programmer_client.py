@@ -24,6 +24,9 @@ COMMAND_WRITE_PROTECTION_DISABLE = 'u'
 COMMAND_WRITE_PROTECTION_CHECK = 'x'
 COMMAND_STATUS_REGISTER_READ = 'y'
 
+COMMAND_SET_CS_IO = '*'
+COMMAND_SET_OUTPUT = 'o'
+
 WRITE_PROTECTION_NONE = 0x00
 WRITE_PROTECTION_PARTIAL = 0x01
 WRITE_PROTECTION_FULL = 0x02
@@ -682,6 +685,39 @@ class SerialProgrammer:
 
         return True
 
+    def set_cs_io(self, io):
+        """Overrides the CS/SS IO of Arduino"""
+        self._debug('Command: SET_CS_IO')
+        
+        self._sendCommand('%s%02x' % (COMMAND_SET_CS_IO, io))
+        if not self._waitForMessage(COMMAND_SET_CS_IO):
+          self._debug('Invalid / no response for SET_CS_IO command')
+          logError('Invalid response')
+          return True
+        
+        
+        return True
+
+    def set_output(self, io, value):
+        """Set IO pin to OUTPUT"""
+        self._debug('Command: SET_OUTPUT')
+        
+        if value==None:
+          value=0x00
+        else:
+          value=value&0xf
+          if value&0xf!=0x0:
+            value=0x1
+          value=value|0x10
+          
+        self._sendCommand('%s%02x%02x' % (COMMAND_SET_OUTPUT, io, value))
+        if not self._waitForMessage(COMMAND_SET_OUTPUT):
+          self._debug('Invalid / no response for SET_OUTPUT command')
+          logError('Invalid response')
+          return True
+        
+        return True
+
 
 def printComPorts():
     logMessage('Available COM ports:')
@@ -709,10 +745,14 @@ def main():
                         help='offset for file read/write in bytes')
     parser.add_argument('--debug', choices=('off', 'normal', 'verbose'), default='off',
                         help='enable debug output')
+    parser.add_argument('--io', type=int, default=None,
+                        help="io used for set-cs-io and set-output")
+    parser.add_argument('--value', type=int, default=None,
+                        help="value used for set-output")
 
     parser.add_argument('command', choices=('ports', 'write', 'read', 'verify', 'erase',
                                             'enable-protection', 'disable-protection', 'check-protection',
-                                            'status-register'),
+                                            'status-register', 'set-cs-io', 'set-output'),
                         help='command to execute')
 
     args = parser.parse_args()
@@ -750,6 +790,12 @@ def main():
     def read_status_register(args, prog):
         return prog.read_status_register()
 
+    def set_cs_io(args, prog):
+        return prog.set_cs_io(args.io)
+
+    def set_output(args, prog):
+        return prog.set_output(args.io, args.value)
+
     commands = {
             'write': write,
             'read': read,
@@ -758,7 +804,9 @@ def main():
             'enable-protection': enable_protection,
             'disable-protection': disable_protection,
             'check-protection': check_protection,
-            'status-register': read_status_register
+            'status-register': read_status_register,
+            'set-cs-io': set_cs_io,
+            'set-output': set_output
         }
 
     if args.command not in commands:
