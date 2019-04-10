@@ -451,6 +451,9 @@ class SerialProgrammer:
             if flash_offset % self.sector_size != 0:
                 logError('flash_offset must be a multiple of the sector size %d' % self.sector_size)
                 return False
+        elif not ((0x0 <= pad) and (pad <= 0xff)):
+            logError('pad must be in range 0x00--0xff')
+            return False
 
         if file_offset < 0:
             logError('file_offset must be a positive value or 0')
@@ -757,7 +760,7 @@ def main():
     parser.add_argument('-f', dest='filename', default='flash.bin',
                         help='file to read from / write to')
     parser.add_argument('-l', type=hex_dec, dest='length', default=DEFAULT_FLASH_SIZE,
-                        help='length to read/write in bytes')
+                        help='length to read/write in bytes, use -1 to write entire file')
 
     parser.add_argument('--rate', type=int, dest='baud_rate', default=115200,
                         help='baud-rate of serial connection')
@@ -766,11 +769,11 @@ def main():
     parser.add_argument('--file-offset', type=hex_dec, dest='file_offset', default=0,
                         help='offset for file read/write in bytes')
     parser.add_argument('--pad', type=hex_dec, default=None,
-                        help='pad if file-size is != SECTOR_SIZE')
+                        help='pad value if file is not algined with SECTOR_SIZE')
     parser.add_argument('--debug', choices=('off', 'normal', 'verbose'), default='off',
                         help='enable debug output')
     parser.add_argument('--io', type=hex_dec, default=None,
-                        help="io used for set-cs-io and set-output")
+                        help="IO pin used for set-cs-io and set-output")
     parser.add_argument('--value', type=hex_dec, default=None,
                         help="value used for set-output")
 
