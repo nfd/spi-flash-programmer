@@ -74,7 +74,7 @@ uint8_t nCsIo;
 void setup()
 {
   nCsIo = SS;
-  
+
   // Use maximum speed with F_CPU / 2
   SPISettings settingsA(F_CPU / 2, MSBFIRST, SPI_MODE0);
   uint16_t i;
@@ -193,7 +193,7 @@ void loop()
     Serial.print(COMMAND_STATUS_REGISTER_READ); // Echo OK
     impl_status_register_read();
     break;
-    
+
   case COMMAND_ID_REGISTER_READ:
     Serial.print(COMMAND_ID_REGISTER_READ); // Echo OK
     impl_jedec_id_read();
@@ -205,7 +205,7 @@ void loop()
       break;
     }
     if (tmp8 != nCsIo) {
-      if (nCsIo != SS) 
+      if (nCsIo != SS)
         pinMode(nCsIo, INPUT);
       nCsIo=tmp8;
       pinMode(nCsIo, OUTPUT);
@@ -229,7 +229,7 @@ void loop()
         digitalWrite(tmp16>>8, LOW);
       }
     }
-    
+
     Serial.print(COMMAND_SET_OUTPUT); // Echo OK
     break;
 

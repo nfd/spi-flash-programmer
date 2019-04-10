@@ -166,7 +166,7 @@ class SerialProgrammer:
                 return data[:-len(message)]
 
         return None
-        
+
     def _dump(self, data_str):
         for offset, data_row in [(i, data_str[i:i+16]) for i in range(0, len(data_str), 16)]:
             logMessage('%08x: %s' % (offset, ' '.join([data_row[i:i+2] for i in range(0, 16, 2)])))
@@ -513,21 +513,21 @@ class SerialProgrammer:
         if (length != -1) and (len(data) != length):
             logError('File is not large enough to read %d bytes' % length)
             return True
-            
+
         if pad != None:
             pad_value = b'%c' % (pad&0xff)
             self._debug("Length of data before padding 0x%x" % (len(data),))
-            
+
             pad_pre = flash_offset % self.sector_size
             self._debug("Pad 0x%x bytes before data" % (pad_pre,))
             data = pad_value*(flash_offset % self.sector_size) + data
-            
+
             post_pad = self.sector_size - (len(data) % self.sector_size)
             if post_pad == self.sector_size:
                 post_pad = 0x0
             self._debug("Pad 0x%x bytes after data" % (post_pad,))
             data = data + pad_value*(post_pad)
-            
+
             flash_offset = flash_offset & (self.sector_size-0x1)
 
         if not self._writeSectors(flash_offset, data):
@@ -713,7 +713,7 @@ class SerialProgrammer:
         data = self._read_register(COMMAND_STATUS_REGISTER_READ, 'STATUS_REGISTER')
         if data==None:
             return True
-        
+
         self._dump(data)
         return True
 
@@ -723,27 +723,26 @@ class SerialProgrammer:
         data = self._read_register(COMMAND_ID_REGISTER_READ, 'ID_REGISTER')
         if data==None:
             return True
-        
+
         self._dump(data)
         return True
 
     def set_cs_io(self, io):
         """Overrides the CS/SS IO of Arduino"""
         self._debug('Command: SET_CS_IO')
-        
+
         self._sendCommand('%s%02x' % (COMMAND_SET_CS_IO, io))
         if not self._waitForMessage(COMMAND_SET_CS_IO):
           self._debug('Invalid / no response for SET_CS_IO command')
           logError('Invalid response')
           return True
-        
-        
+
         return True
 
     def set_output(self, io, value):
         """Set IO pin to OUTPUT"""
         self._debug('Command: SET_OUTPUT')
-        
+
         if value==None:
           value=0x00
         else:
@@ -751,13 +750,13 @@ class SerialProgrammer:
           if value&0xf!=0x0:
             value=0x1
           value=value|0x10
-          
+
         self._sendCommand('%s%02x%02x' % (COMMAND_SET_OUTPUT, io, value))
         if not self._waitForMessage(COMMAND_SET_OUTPUT):
           self._debug('Invalid / no response for SET_OUTPUT command')
           logError('Invalid response')
           return True
-        
+
         return True
 
 
