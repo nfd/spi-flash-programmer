@@ -18,6 +18,7 @@
 #define COMMAND_WRITE_PROTECTION_DISABLE 'u'
 #define COMMAND_WRITE_PROTECTION_CHECK 'x'
 #define COMMAND_STATUS_REGISTER_READ 'y'
+#define COMMAND_ID_REGISTER_READ 'i'
 #define COMMAND_ERROR '!'
 #define COMMAND_SET_CS '*'
 #define COMMAND_SET_OUTPUT 'o'
@@ -191,6 +192,11 @@ void loop()
   case COMMAND_STATUS_REGISTER_READ:
     Serial.print(COMMAND_STATUS_REGISTER_READ); // Echo OK
     impl_status_register_read();
+    break;
+    
+  case COMMAND_ID_REGISTER_READ:
+    Serial.print(COMMAND_ID_REGISTER_READ); // Echo OK
+    impl_jedec_id_read();
     break;
 
   case COMMAND_SET_CS:
@@ -502,6 +508,7 @@ uint32_t crc_buffer(void)
 #define WRITE        0x02
 #define SECTOR_ERASE 0x20
 #define CHIP_ERASE   0xC7
+#define JEDECIDR     0x9F
 
 #define WPS          0x040000
 #define CP           0x000400
@@ -743,3 +750,15 @@ void impl_status_register_read(void)
   write_hex_u8(statusRegister2);
   write_hex_u8(statusRegister3);
 }
+
+void impl_jedec_id_read(void)
+{
+  digitalWrite(nCsIo, LOW);
+  SPI.transfer(JEDECIDR);
+  write_hex_u8(0x03);
+  write_hex_u8(SPI.transfer(0x0));
+  write_hex_u8(SPI.transfer(0x0));
+  write_hex_u8(SPI.transfer(0x0));
+  digitalWrite(nCsIo, HIGH);
+}
+
