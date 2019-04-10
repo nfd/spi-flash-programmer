@@ -245,6 +245,7 @@ void loop()
     Serial.println("  u         : disable write protection");
     Serial.println("  x         : check write protection");
     Serial.println("  y         : read status register");
+    Serial.println("  i         : read id register");
     Serial.println();
     Serial.println("  h         : print buffer CRC-32");
     Serial.println("  l         : display the buffer (in hex)");
