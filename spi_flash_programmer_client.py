@@ -441,15 +441,16 @@ class SerialProgrammer:
             logMessage('Connected to \'%s\'' % version.strip())
             return True
 
-    def writeFromFile(self, filename, flash_offset=0, file_offset=0, length=DEFAULT_SECTOR_SIZE):
-        """Write the data in the file to the flash"""
-        if length % self.sector_size != 0:
-            logError('length must be a multiple of the sector size %d' % self.sector_size)
-            return False
+    def writeFromFile(self, filename, flash_offset=0, file_offset=0, length=DEFAULT_SECTOR_SIZE, pad=None):
+        """Write the data from file to the flash"""
+        if pad == None:
+            if length % self.sector_size != 0:
+                logError('length must be a multiple of the sector size %d' % self.sector_size)
+                return False
 
-        if flash_offset % self.sector_size != 0:
-            logError('flash_offset must be a multiple of the sector size %d' % self.sector_size)
-            return False
+            if flash_offset % self.sector_size != 0:
+                logError('flash_offset must be a multiple of the sector size %d' % self.sector_size)
+                return False
 
         if file_offset < 0:
             logError('file_offset must be a positive value or 0')
@@ -460,12 +461,29 @@ class SerialProgrammer:
             with open(filename, 'rb') as file:
                 file.seek(file_offset)
                 data = file.read(length)
-                if len(data) != length:
-                    logError('File is not large enough to read %d bytes' % length)
-                    return True
         except IOError:
             logError('Could not read from file \'%s\'' % filename)
             return True
+
+        if (length != -1) and (len(data) != length):
+            logError('File is not large enough to read %d bytes' % length)
+            return True
+            
+        if pad != None:
+            pad_value = b'%c' % (pad&0xff)
+            self._debug("Length of data before padding 0x%x" % (len(data),))
+            
+            pad_pre = flash_offset % self.sector_size
+            self._debug("Pad 0x%x bytes before data" % (pad_pre,))
+            data = pad_value*(flash_offset % self.sector_size) + data
+            
+            post_pad = self.sector_size - (len(data) % self.sector_size)
+            if post_pad == self.sector_size:
+                post_pad = 0x0
+            self._debug("Pad 0x%x bytes after data" % (post_pad,))
+            data = data + pad_value*(post_pad)
+            
+            flash_offset = flash_offset & (self.sector_size-0x1)
 
         if not self._writeSectors(flash_offset, data):
             logError('Aborting')
@@ -729,25 +747,31 @@ def printComPorts():
 
 
 def main():
+    def hex_dec(x):
+        # use auto detect mode, supports 0bYYYY=binary, 0xYYYY=hex, YYYY=decimal
+        return int(x,0)
+
     parser = argparse.ArgumentParser(description='Interface with an Arduino-based SPI flash programmer')
     parser.add_argument('-d', dest='device', default='COM1',
                         help='serial port to communicate with')
     parser.add_argument('-f', dest='filename', default='flash.bin',
                         help='file to read from / write to')
-    parser.add_argument('-l', type=int, dest='length', default=DEFAULT_FLASH_SIZE,
+    parser.add_argument('-l', type=hex_dec, dest='length', default=DEFAULT_FLASH_SIZE,
                         help='length to read/write in bytes')
 
     parser.add_argument('--rate', type=int, dest='baud_rate', default=115200,
                         help='baud-rate of serial connection')
-    parser.add_argument('--flash-offset', type=int, dest='flash_offset', default=0,
+    parser.add_argument('--flash-offset', type=hex_dec, dest='flash_offset', default=0,
                         help='offset for flash read/write in bytes')
-    parser.add_argument('--file-offset', type=int, dest='file_offset', default=0,
+    parser.add_argument('--file-offset', type=hex_dec, dest='file_offset', default=0,
                         help='offset for file read/write in bytes')
+    parser.add_argument('--pad', type=hex_dec, default=None,
+                        help='pad if file-size is != SECTOR_SIZE')
     parser.add_argument('--debug', choices=('off', 'normal', 'verbose'), default='off',
                         help='enable debug output')
-    parser.add_argument('--io', type=int, default=None,
+    parser.add_argument('--io', type=hex_dec, default=None,
                         help="io used for set-cs-io and set-output")
-    parser.add_argument('--value', type=int, default=None,
+    parser.add_argument('--value', type=hex_dec, default=None,
                         help="value used for set-output")
 
     parser.add_argument('command', choices=('ports', 'write', 'read', 'verify', 'erase',
@@ -767,7 +791,7 @@ def main():
         return
 
     def write(args, prog):
-        return prog.writeFromFile(args.filename, args.flash_offset, args.file_offset, args.length)
+        return prog.writeFromFile(args.filename, args.flash_offset, args.file_offset, args.length, args.pad)
 
     def read(args, prog):
         return prog.readToFile(args.filename, args.flash_offset, args.length)
