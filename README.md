@@ -176,8 +176,8 @@ The board is connected using the UEXT connector.
 > python3 spi_flash_programmer_client.py -d COM1 --io 0x2 --value 0x0 set-output
 # Set CS/SS to PIN 13/0xd
 > python3 spi_flash_programmer_client.py -d COM1 --io 0xd set-cs-io
-# power cycle the EVB, check if STATUS register is readable
-> python3 spi_flash_programmer_client.py -d COM1 --io 0xd status-register
+# power cycle the EVB, check if ID register is readable
+> python3 spi_flash_programmer_client.py -d COM1 id-register
 # program the bitmap
 > python3 spi_flash_programmer_client.py -d COM1 -l -1 --pad 0xff -f toplevel_bitmap.bin write
 ```
