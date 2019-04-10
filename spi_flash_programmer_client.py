@@ -23,6 +23,10 @@ COMMAND_WRITE_PROTECTION_ENABLE = 'p'
 COMMAND_WRITE_PROTECTION_DISABLE = 'u'
 COMMAND_WRITE_PROTECTION_CHECK = 'x'
 COMMAND_STATUS_REGISTER_READ = 'y'
+COMMAND_ID_REGISTER_READ = 'i'
+
+COMMAND_SET_CS_IO = '*'
+COMMAND_SET_OUTPUT = 'o'
 
 WRITE_PROTECTION_NONE = 0x00
 WRITE_PROTECTION_PARTIAL = 0x01
@@ -162,6 +166,11 @@ class SerialProgrammer:
                 return data[:-len(message)]
 
         return None
+
+    def _dump(self, data_str):
+        for offset, data_row in [(i, data_str[i:i+16]) for i in range(0, len(data_str), 16)]:
+            logMessage('%08x: %s' % (offset, ' '.join([data_row[i:i+2] for i in range(0, 16, 2)])))
+        return
 
     def _sendCommand(self, command):
         self._debug('Send: \'%s\'' % command, DEBUG_VERBOSE)
@@ -428,6 +437,42 @@ class SerialProgrammer:
 
         return message.decode(ENCODING)
 
+    def _read_register(self, cmd, name):
+        """Generic read register function, send cmd and read a <CMD><LEN><DATA> response"""
+        self._sendCommand(cmd)
+        if not self._waitForMessage(cmd):
+            self._debug('Invalid / no response for %s command' % (name,))
+            logError('Invalid response')
+            return None
+
+        length_str = self._readExactly(2).decode(ENCODING)
+        if length_str is None:
+            self._debug('Invalid / no response for %s length' % (name,))
+            logError('Invalid response')
+            return None
+
+        try:
+            length = int(length_str, 16)
+        except ValueError:
+            self._debug('Could not decode %s length' % (name,))
+            logError('Invalid register length')
+            return None
+
+        data_str = self._readExactly(length * 2).decode(ENCODING)
+        if data_str is None:
+            self._debug('Invalid / no response for %s check' % (name,))
+            logError('Invalid response')
+            return None
+
+        try:  # Check if valid data
+            decoded_data = binascii.a2b_hex(data_str)
+        except TypeError:
+            self._debug('Could not decode %s content' % (name))
+            logError('Invalid response')
+            return None
+
+        return data_str
+
     def hello(self):
         """Send a hello message and print the retrieved version string"""
         version = self._hello()
@@ -438,14 +483,18 @@ class SerialProgrammer:
             logMessage('Connected to \'%s\'' % version.strip())
             return True
 
-    def writeFromFile(self, filename, flash_offset=0, file_offset=0, length=DEFAULT_SECTOR_SIZE):
-        """Write the data in the file to the flash"""
-        if length % self.sector_size != 0:
-            logError('length must be a multiple of the sector size %d' % self.sector_size)
-            return False
+    def writeFromFile(self, filename, flash_offset=0, file_offset=0, length=DEFAULT_SECTOR_SIZE, pad=None):
+        """Write the data from file to the flash"""
+        if pad == None:
+            if (length != -1) and (length % self.sector_size != 0):
+                logError('length must be a multiple of the sector size %d' % self.sector_size)
+                return False
 
-        if flash_offset % self.sector_size != 0:
-            logError('flash_offset must be a multiple of the sector size %d' % self.sector_size)
+            if flash_offset % self.sector_size != 0:
+                logError('flash_offset must be a multiple of the sector size %d' % self.sector_size)
+                return False
+        elif not ((0x0 <= pad) and (pad <= 0xff)):
+            logError('pad must be in range 0x00--0xff')
             return False
 
         if file_offset < 0:
@@ -457,12 +506,32 @@ class SerialProgrammer:
             with open(filename, 'rb') as file:
                 file.seek(file_offset)
                 data = file.read(length)
-                if len(data) != length:
-                    logError('File is not large enough to read %d bytes' % length)
-                    return True
         except IOError:
             logError('Could not read from file \'%s\'' % filename)
             return True
+
+        if (length != -1) and (len(data) != length):
+            logError('File is not large enough to read %d bytes' % length)
+            return True
+
+        if pad != None:
+            pad_value = b'%c' % (pad&0xff)
+            self._debug("Length of data before padding 0x%x" % (len(data),))
+
+            pad_pre = flash_offset % self.sector_size
+            self._debug("Pad 0x%x bytes before data" % (pad_pre,))
+            data = pad_value*(flash_offset % self.sector_size) + data
+
+            post_pad = self.sector_size - (len(data) % self.sector_size)
+            if post_pad == self.sector_size:
+                post_pad = 0x0
+            self._debug("Pad 0x%x bytes after data" % (post_pad,))
+            data = data + pad_value*(post_pad)
+
+            flash_offset = flash_offset & (self.sector_size-0x1)
+        elif (length == -1) and (len(data) % self.sector_size != 0):
+            logError('file size must be a multiple of the sector size %d, use --pad' % self.sector_size)
+            return False
 
         if not self._writeSectors(flash_offset, data):
             logError('Aborting')
@@ -644,41 +713,52 @@ class SerialProgrammer:
     def read_status_register(self):
         """Reads the status register contents"""
         self._debug('Command: STATUS_REGISTER')
-
-        self._sendCommand(COMMAND_STATUS_REGISTER_READ)
-        if not self._waitForMessage(COMMAND_STATUS_REGISTER_READ):
-            self._debug('Invalid / no response for STATUS_REGISTER command')
-            logError('Invalid response')
+        data = self._read_register(COMMAND_STATUS_REGISTER_READ, 'STATUS_REGISTER')
+        if data==None:
             return True
 
-        length_str = self._readExactly(2).decode(ENCODING)
-        if length_str is None:
-            self._debug('Invalid / no response for status register length')
-            logError('Invalid response')
+        self._dump(data)
+        return True
+
+    def read_id_register(self):
+        """Reads the id register contents"""
+        self._debug('Command: ID_REGISTER')
+        data = self._read_register(COMMAND_ID_REGISTER_READ, 'ID_REGISTER')
+        if data==None:
             return True
 
-        try:
-            length = int(length_str, 16)
-        except ValueError:
-            self._debug('Could not decode status register length')
-            logError('Invalid register length')
-            return True
+        self._dump(data)
+        return True
 
-        status_str = self._readExactly(length * 2).decode(ENCODING)
-        if status_str is None:
-            self._debug('Invalid / no response for status register check')
-            logError('Invalid response')
-            return True
+    def set_cs_io(self, io):
+        """Overrides the CS/SS IO of Arduino"""
+        self._debug('Command: SET_CS_IO')
 
-        try:  # Check if valid status data
-            decoded_status = binascii.a2b_hex(status_str)
-        except TypeError:
-            self._debug('Could not decode status register content')
-            logError('Invalid response')
-            return True
+        self._sendCommand('%s%02x' % (COMMAND_SET_CS_IO, io))
+        if not self._waitForMessage(COMMAND_SET_CS_IO):
+          self._debug('Invalid / no response for SET_CS_IO command')
+          logError('Invalid response')
+          return True
 
-        for offset, status_row in [(i, status_str[i:i+16]) for i in range(0, len(status_str), 16)]:
-            logMessage('%08x: %s' % (offset, ' '.join([status_row[i:i+4] for i in range(0, 16, 4)])))
+        return True
+
+    def set_output(self, io, value):
+        """Set IO pin to OUTPUT"""
+        self._debug('Command: SET_OUTPUT')
+
+        if value==None:
+          value=0x00
+        else:
+          value=value&0xf
+          if value&0xf!=0x0:
+            value=0x1
+          value=value|0x10
+
+        self._sendCommand('%s%02x%02x' % (COMMAND_SET_OUTPUT, io, value))
+        if not self._waitForMessage(COMMAND_SET_OUTPUT):
+          self._debug('Invalid / no response for SET_OUTPUT command')
+          logError('Invalid response')
+          return True
 
         return True
 
@@ -693,26 +773,36 @@ def printComPorts():
 
 
 def main():
+    def hex_dec(x):
+        # use auto detect mode, supports 0bYYYY=binary, 0xYYYY=hex, YYYY=decimal
+        return int(x,0)
+
     parser = argparse.ArgumentParser(description='Interface with an Arduino-based SPI flash programmer')
     parser.add_argument('-d', dest='device', default='COM1',
                         help='serial port to communicate with')
     parser.add_argument('-f', dest='filename', default='flash.bin',
                         help='file to read from / write to')
-    parser.add_argument('-l', type=int, dest='length', default=DEFAULT_FLASH_SIZE,
-                        help='length to read/write in bytes')
+    parser.add_argument('-l', type=hex_dec, dest='length', default=DEFAULT_FLASH_SIZE,
+                        help='length to read/write in bytes, use -1 to write entire file')
 
     parser.add_argument('--rate', type=int, dest='baud_rate', default=115200,
                         help='baud-rate of serial connection')
-    parser.add_argument('--flash-offset', type=int, dest='flash_offset', default=0,
+    parser.add_argument('--flash-offset', type=hex_dec, dest='flash_offset', default=0,
                         help='offset for flash read/write in bytes')
-    parser.add_argument('--file-offset', type=int, dest='file_offset', default=0,
+    parser.add_argument('--file-offset', type=hex_dec, dest='file_offset', default=0,
                         help='offset for file read/write in bytes')
+    parser.add_argument('--pad', type=hex_dec, default=None,
+                        help='pad value if file is not algined with SECTOR_SIZE')
     parser.add_argument('--debug', choices=('off', 'normal', 'verbose'), default='off',
                         help='enable debug output')
+    parser.add_argument('--io', type=hex_dec, default=None,
+                        help="IO pin used for set-cs-io and set-output")
+    parser.add_argument('--value', type=hex_dec, default=None,
+                        help="value used for set-output")
 
     parser.add_argument('command', choices=('ports', 'write', 'read', 'verify', 'erase',
                                             'enable-protection', 'disable-protection', 'check-protection',
-                                            'status-register'),
+                                            'status-register', 'id-register', 'set-cs-io', 'set-output'),
                         help='command to execute')
 
     args = parser.parse_args()
@@ -727,7 +817,7 @@ def main():
         return
 
     def write(args, prog):
-        return prog.writeFromFile(args.filename, args.flash_offset, args.file_offset, args.length)
+        return prog.writeFromFile(args.filename, args.flash_offset, args.file_offset, args.length, args.pad)
 
     def read(args, prog):
         return prog.readToFile(args.filename, args.flash_offset, args.length)
@@ -750,6 +840,15 @@ def main():
     def read_status_register(args, prog):
         return prog.read_status_register()
 
+    def read_id_register(args, prog):
+        return prog.read_id_register()
+
+    def set_cs_io(args, prog):
+        return prog.set_cs_io(args.io)
+
+    def set_output(args, prog):
+        return prog.set_output(args.io, args.value)
+
     commands = {
             'write': write,
             'read': read,
@@ -758,7 +857,10 @@ def main():
             'enable-protection': enable_protection,
             'disable-protection': disable_protection,
             'check-protection': check_protection,
-            'status-register': read_status_register
+            'status-register': read_status_register,
+            'id-register': read_id_register,
+            'set-cs-io': set_cs_io,
+            'set-output': set_output
         }
 
     if args.command not in commands:
@@ -778,3 +880,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
