@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include <Arduino.h>
 #include <SPI.h>
 
 // Commands always use other characters than 0-9 a-f A-F
@@ -35,8 +36,11 @@
 
 #define VERSION "SPI Flash programmer v1.0"
 
+// Configure for your chip and transfer rates accordingly
 #define SECTOR_SIZE 4096
 #define PAGE_SIZE 256
+#define SERIAL_RATE 115200
+#define SPI_SPEED F_CPU/32
 
 void dump_buffer(void);
 void dump_buffer_crc(void);
@@ -59,7 +63,7 @@ void write_hex_u16(uint16_t value);
 
 void impl_enable_write(void);
 void impl_erase_chip(void);
-void impl_erase_sector(void);
+void impl_erase_sector(uint32_t addressSPI);
 void impl_read_page(uint32_t address);
 void impl_write_page(uint32_t address);
 void impl_status_register_read(void);
@@ -67,6 +71,7 @@ void impl_write_protection_enable(void);
 void impl_write_protection_disable(void);
 void impl_write_protection_check(void);
 void impl_wait_for_write_enable(void);
+void impl_jedec_id_read(void);
 
 uint8_t buffer [PAGE_SIZE];
 uint8_t nCsIo;
@@ -76,7 +81,7 @@ void setup()
   nCsIo = SS;
 
   // Use maximum speed with F_CPU / 2
-  SPISettings settingsA(F_CPU / 2, MSBFIRST, SPI_MODE0);
+  SPISettings settingsA(SPI_SPEED, MSBFIRST, SPI_MODE0);
   uint16_t i;
 
   for (i = 0; i < PAGE_SIZE; i += 4)
@@ -87,7 +92,7 @@ void setup()
     buffer[i + 3] = 0xEF;
   }
 
-  Serial.begin(115200);
+  Serial.begin(SERIAL_RATE);
 
   SPI.begin(); // Initialize pins
   SPI.beginTransaction(settingsA);
@@ -762,4 +767,3 @@ void impl_jedec_id_read(void)
   write_hex_u8(SPI.transfer(0x0));
   digitalWrite(nCsIo, HIGH);
 }
-
