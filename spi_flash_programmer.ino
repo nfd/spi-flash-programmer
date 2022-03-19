@@ -40,7 +40,8 @@
 #define SECTOR_SIZE 4096
 #define PAGE_SIZE 256
 #define SERIAL_RATE 115200
-#define SPI_SPEED F_CPU/32
+// Use maximum speed with F_CPU / 2
+#define SPI_SPEED F_CPU/2
 
 void dump_buffer(void);
 void dump_buffer_crc(void);
@@ -80,7 +81,7 @@ void setup()
 {
   nCsIo = SS;
 
-  // Use maximum speed with F_CPU / 2
+  // Setup SPI
   SPISettings settingsA(SPI_SPEED, MSBFIRST, SPI_MODE0);
   uint16_t i;
 
