@@ -13,7 +13,9 @@ COMMAND_HELLO = '>'
 
 COMMAND_BUFFER_CRC = 'h'
 COMMAND_BUFFER_LOAD = 'l'
+COMMAND_BUFFER_LOAD_BINARY = 'L'
 COMMAND_BUFFER_STORE = 's'
+COMMAND_BUFFER_STORE_BINARY = 'S'
 
 COMMAND_FLASH_READ = 'r'
 COMMAND_FLASH_WRITE = 'w'
@@ -84,8 +86,6 @@ class SerialProgrammer:
         self._debug('Opening serial connection')
         self.sock = serial.Serial(port, baud_rate, timeout=1)
         self._debug('Serial connection opened successfully')
-
-        time.sleep(2)  # Wait for the Arduino bootloader
 
     def _debug(self, message, level=DEBUG_NORMAL):
         if self.debug >= level:
@@ -295,6 +295,43 @@ class SerialProgrammer:
         self._debug('Page read tries exceeded')
         return None
 
+    def _readPageBinary(self, page, tries=3):
+        """Read a page from the flash and receive it's contents"""
+        self._debug('Command: FLASH_READ_PAGE %d' % page)
+
+        # Load page into the buffer
+        crc = self._loadPageMultiple(page, tries)
+
+        for _ in range(tries):
+            # Dump the buffer
+            self._sendCommand(COMMAND_BUFFER_LOAD_BINARY)
+
+            # Wait for data start
+            if not self._waitForMessage(COMMAND_BUFFER_LOAD_BINARY):
+                self._debug('Invalid / no response for BUFFER_LOAD_BINARY command')
+                continue
+
+            # Load successful -> read sector
+            data = self._readExactly(self.page_size)
+            if data is None:
+                self._debug('Invalid / no response for page data')
+                continue
+
+            try:
+                if crc == binascii.crc32(data):
+                    self._debug('CRC did match with read data')
+                    return data
+                else:
+                    self._debug('CRC did not match with read data')
+                    continue
+
+            except TypeError:
+                self._debug('CRC could not be parsed')
+                continue
+
+        self._debug('Page read tries exceeded')
+        return None
+
     def _writePage(self, page, data):
         """Write a page into the buffer and instruct a page write operation
 
@@ -326,7 +363,51 @@ class SerialProgrammer:
 
         # Write page
         self._sendCommand('%s%08x' % (COMMAND_FLASH_WRITE, page))
-        time.sleep(.2)  # Sleep 200 ms
+
+        if not self._waitForMessage(COMMAND_FLASH_WRITE):
+            self._debug('Invalid / no response for FLASH_WRITE command')
+            return False
+
+        # Read back page
+        # Fail if we can't read what we wrote
+        read_crc = self._loadPageMultiple(page)
+        if read_crc is None:
+            self._debug('Invalid / no CRC response for flash write')
+            return False
+
+        return (read_crc == expected_crc)
+
+    def _writePageBinary(self, page, data):
+        """Write a page into the buffer and instruct a page write operation
+
+        This operation checks the written data with a generated checksum.
+        """
+        assert len(data) == self.page_size, (len(data), data)
+
+        # Write the page and verify that it was written correctly.
+        expected_crc = binascii.crc32(data)
+
+        self.sock.write(bytes(COMMAND_BUFFER_STORE_BINARY,ENCODING) + data)
+        self.sock.flush()
+        if not self._waitForMessage(COMMAND_BUFFER_STORE_BINARY):
+            self._debug('Invalid / no response for BUFFER_STORE_BINARY command')
+            return False
+
+        # This shouldn't fail if we're using a reliable connection.
+        crc = self._readExactly(8).decode(ENCODING)
+        if crc is None:
+            self._debug('Invalid / no CRC response for buffer write')
+            return None
+
+        try:
+            if int(crc, 16) != expected_crc:
+                return None
+        except ValueError:
+            self._debug('Could not decode CRC')
+            return None
+
+        # Write page
+        self._sendCommand('%s%08x' % (COMMAND_FLASH_WRITE, page))
 
         if not self._waitForMessage(COMMAND_FLASH_WRITE):
             self._debug('Invalid / no response for FLASH_WRITE command')
@@ -376,7 +457,7 @@ class SerialProgrammer:
                     data_index = page_data_index * self.page_size
                     page_index = pages_offset + page_data_index
 
-                    if self._writePage(page_index, data[data_index: data_index + self.page_size]):
+                    if self._writePageBinary(page_index, data[data_index: data_index + self.page_size]):
                         bar.show(page_data_index + 1)
                         continue
 
@@ -560,7 +641,7 @@ class SerialProgrammer:
                         bar.show(page)
 
                         page_index = pages_offset + page
-                        data = self._readPage(page_index)
+                        data = self._readPageBinary(page_index)
                         if data is not None:
                             file.write(data)
                             continue

@@ -10,7 +10,9 @@
 #define COMMAND_HELP '?'
 #define COMMAND_BUFFER_CRC 'h'
 #define COMMAND_BUFFER_LOAD 'l'
+#define COMMAND_BUFFER_LOAD_BINARY 'L'
 #define COMMAND_BUFFER_STORE 's'
+#define COMMAND_BUFFER_STORE_BINARY 'S'
 #define COMMAND_FLASH_READ 'r'
 #define COMMAND_FLASH_WRITE 'w'
 #define COMMAND_FLASH_ERASE_SECTOR 'k'
@@ -44,8 +46,10 @@
 #define SPI_SPEED F_CPU/2
 
 void dump_buffer(void);
+void dump_buffer_binary(void);
 void dump_buffer_crc(void);
 int8_t read_into_buffer(void);
+int8_t read_into_buffer_binary(void);
 
 void erase_all(void);
 void erase_sector(uint32_t address);
@@ -164,6 +168,12 @@ void loop()
     Serial.println();
     break;
 
+  case COMMAND_BUFFER_LOAD_BINARY:
+    Serial.print(COMMAND_BUFFER_LOAD_BINARY); // Echo OK
+    dump_buffer_binary();
+    Serial.println();
+    break;
+
   case COMMAND_BUFFER_CRC:
     Serial.print(COMMAND_BUFFER_CRC); // Echo OK
     dump_buffer_crc();
@@ -177,6 +187,16 @@ void loop()
     }
 
     Serial.print(COMMAND_BUFFER_STORE); // Echo OK
+    dump_buffer_crc();
+    break;
+
+  case COMMAND_BUFFER_STORE_BINARY:
+    if (!read_into_buffer_binary()) {
+      Serial.print(COMMAND_ERROR); // Echo Error
+      break;
+    }
+
+    Serial.print(COMMAND_BUFFER_STORE_BINARY); // Echo OK
     dump_buffer_crc();
     break;
 
@@ -332,6 +352,15 @@ void dump_buffer(void)
   }
 }
 
+void dump_buffer_binary(void)
+{
+  uint16_t counter;
+
+  for(counter = 0; counter < PAGE_SIZE; counter++) {
+    Serial.write(buffer[counter]);
+  }
+}
+
 void dump_buffer_crc(void)
 {
   uint32_t crc = crc_buffer();
@@ -350,6 +379,22 @@ int8_t read_into_buffer(void)
     }
 
     buffer[counter] = (uint8_t) tmp;
+  }
+
+  return 1;
+}
+
+int8_t read_into_buffer_binary(void)
+{
+  uint16_t counter;
+  int16_t c;
+
+  for(counter = 0; counter < PAGE_SIZE; counter++) {
+    do {
+      c = Serial.read();
+    } while(c == -1);
+
+    buffer[counter] = (uint8_t) c;
   }
 
   return 1;
