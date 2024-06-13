@@ -7,8 +7,6 @@ import binascii
 
 import serial.tools.list_ports as list_ports
 
-from clint.textui import colored, puts, progress
-
 COMMAND_HELLO = '>'
 
 COMMAND_BUFFER_CRC = 'h'
@@ -48,23 +46,69 @@ DEBUG_NORMAL = 1
 DEBUG_VERBOSE = 2
 
 
+class bcolors:
+    MAGENTA = '\033[95m'
+    BLUE = '\033[94m'
+    CYAN = '\033[96m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+
+def decorademsg(s: str, color):
+    print(color + s + bcolors.ENDC)
+
+
 def logMessage(text):
-    puts(colored.white(text))
+    print(text)
 
 
 def logOk(text):
-    puts(colored.green(text))
+    decorademsg(text, bcolors.GREEN)
 
 
 def logError(text):
-    puts(colored.red(text))
+    decorademsg(text, bcolors.RED)
 
 
 def logDebug(text, type):
     if type == DEBUG_NORMAL:
-        puts(colored.cyan(text))
+
+        decorademsg(text, bcolors.CYAN)
     else:  # DEBUG_VERBOSE
-        puts(colored.magenta(text))
+        decorademsg(text, bcolors.MAGENTA)
+
+
+class progress():
+    def __init__(self, max) -> None:
+        self.max = max
+        self.act = 0
+        print("\r\n")
+
+    def show(self, cnt):
+        self.print_delete_line()
+        self.act = cnt
+        print(str(self.act) + " of " + str(self.max))
+
+    def show_bar(self, cnt):
+        self.cnt = cnt
+        percent = int(round(100.0 * self.cnt / self.max))
+        barlen = 40
+        bar = "["
+        for i in range(barlen):
+            if (i < (percent / (100 / barlen))):
+                bar = bar + "#"
+            else:
+                bar = bar + " "
+        bar = bar + "] " + str(self.cnt) + " of " + str(self.max)
+        self.print_delete_line()
+        print(bar)
+
+    def print_delete_line(self):
+        print("\033[A\033[A")  # to clear the previous print
 
 
 class SerialProgrammer:
@@ -355,40 +399,42 @@ class SerialProgrammer:
         page_count = len(data) // self.page_size
         sector_count = len(data) // self.sector_size
 
-        with progress.Bar(expected_size=page_count) as bar:
-            sector_write_attempt = 0
-            sector = 0
-            while sector < sector_count:
-                sector_index = sectors_offset + sector
+        sector_write_attempt = 0
+        sector = 0
 
-                bar.show(sector * self.pages_per_sector)
+        p = progress(page_count)
 
-                # Erase sector up to 'tries' times
-                for _ in range(tries):
-                    if self._eraseSector(sector_index):
-                        break
-                else:  # No erase was successful
-                    logError('Could not erase sector 0x%08x' % sector_index)
-                    return False
+        while sector < sector_count:
+            sector_index = sectors_offset + sector
 
-                for page in range(self.pages_per_sector):
-                    page_data_index = sector * self.pages_per_sector + page
-                    data_index = page_data_index * self.page_size
-                    page_index = pages_offset + page_data_index
+            p.show_bar(sector * self.pages_per_sector)
 
-                    if self._writePage(page_index, data[data_index: data_index + self.page_size]):
-                        bar.show(page_data_index + 1)
-                        continue
+            # Erase sector up to 'tries' times
+            for _ in range(tries):
+                if self._eraseSector(sector_index):
+                    break
+            else:  # No erase was successful
+                logError('Could not erase sector 0x%08x' % sector_index)
+                return False
 
-                    sector_write_attempt += 1
-                    if sector_write_attempt < tries:
-                        break  # Retry sector
+            for page in range(self.pages_per_sector):
+                page_data_index = sector * self.pages_per_sector + page
+                data_index = page_data_index * self.page_size
+                page_index = pages_offset + page_data_index
 
-                    logError('Could not write page 0x%08x' % page_index)
-                    return False
+                if self._writePage(page_index, data[data_index: data_index + self.page_size]):
+                    p.show_bar(page_data_index + 1)
+                    continue
 
-                else:  # All pages written normally -> next sector
-                    sector += 1
+                sector_write_attempt += 1
+                if sector_write_attempt < tries:
+                    break  # Retry sector
+
+                logError('Could not write page 0x%08x' % page_index)
+                return False
+
+            else:  # All pages written normally -> next sector
+                sector += 1
 
         return True
 
@@ -400,21 +446,21 @@ class SerialProgrammer:
         assert length % self.sector_size == 0
         sector_count = length // self.sector_size
 
-        with progress.Bar(expected_size=sector_count) as bar:
-            for sector in range(sector_count):
-                sector_index = sectors_offset + sector
+        p = progress(sector_count)
+        for sector in range(sector_count):
+            sector_index = sectors_offset + sector
 
-                bar.show(sector)
+            p.show(sector)
 
-                # Erase sector up to 'tries' times
-                for _ in range(tries):
-                    if self._eraseSector(sector_index):
-                        break
-                else:  # No erase was successful
-                    logError('Could not erase sector %08x' % sector_index)
-                    return False
+            # Erase sector up to 'tries' times
+            for _ in range(tries):
+                if self._eraseSector(sector_index):
+                    break
+            else:  # No erase was successful
+                logError('Could not erase sector %08x' % sector_index)
+                return False
 
-            bar.show(sector_count)
+            p.show(sector_count)
 
         return True
 
@@ -555,21 +601,23 @@ class SerialProgrammer:
 
         try:
             with open(filename, 'wb') as file:
-                with progress.Bar(expected_size=page_count) as bar:
-                    for page in range(page_count):
-                        bar.show(page)
 
-                        page_index = pages_offset + page
-                        data = self._readPage(page_index)
-                        if data is not None:
-                            file.write(data)
-                            continue
+                p = progress(page_count)
+                for page in range(page_count):
 
-                        # Invalid data
-                        logError('Could not read page 0x%08x' % page_index)
-                        return True
+                    p.show(page)
 
-                    bar.show(page_count)
+                    page_index = pages_offset + page
+                    data = self._readPage(page_index)
+                    if data is not None:
+                        file.write(data)
+                        continue
+
+                    # Invalid data
+                    logError('Could not read page 0x%08x' % page_index)
+                    return True
+
+                p.show(page_count)
 
             logOk('Done')
             return True
@@ -597,24 +645,25 @@ class SerialProgrammer:
             with open(filename, 'rb') as file:
                 file.seek(file_offset)
 
-                with progress.Bar(expected_size=page_count) as bar:
-                    for page in range(page_count):
-                        bar.show(page)
+                p = progress(page_count)
+                for page in range(page_count):
 
-                        data = file.read(self.page_size)
+                    p.show(page)
 
-                        page_index = pages_offset + page
-                        crc = self._loadPageMultiple(page_index)
-                        if crc is None:
-                            logError('Could not read page 0x%08x' % page_index)
-                            return True
+                    data = file.read(self.page_size)
 
-                        if crc == binascii.crc32(data):
-                            logOk('Page 0x%08x OK' % page_index)
-                        else:
-                            logError('Page 0x%08x invalid' % page_index)
+                    page_index = pages_offset + page
+                    crc = self._loadPageMultiple(page_index)
+                    if crc is None:
+                        logError('Could not read page 0x%08x' % page_index)
+                        return True
 
-                    bar.show(page_count)
+                    if crc == binascii.crc32(data):
+                        logOk('Page 0x%08x OK' % page_index)
+                    else:
+                        logError('Page 0x%08x invalid' % page_index)
+
+                p.show(page_count)
 
             logOk('Done')
             return True
@@ -880,4 +929,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
